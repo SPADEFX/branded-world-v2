@@ -1,0 +1,191 @@
+import { create } from 'zustand'
+import * as THREE from 'three'
+import { savedHiddenIds, savedDynamicObjects } from '@/config/editorPersistence'
+
+export interface EditorObject {
+  id: string
+  model: string
+  category: string
+  position: [number, number, number]
+  rotation: number
+  scale: number
+}
+
+export interface UndoEntry {
+  id: string
+  position: [number, number, number]
+  rotation: number
+}
+
+interface EditorState {
+  enabled: boolean
+  selectedId: string | null
+  mode: 'translate' | 'rotate'
+  dragging: boolean
+  placingModel: string | null
+  eraserMode: boolean
+  cameraMode: 'follow' | 'top' | 'free'
+  objects: Record<string, EditorObject>
+  dynamicObjects: EditorObject[]
+  hiddenIds: Set<string>
+  undoStack: UndoEntry[]
+  toggle: () => void
+  select: (id: string | null) => void
+  setMode: (mode: 'translate' | 'rotate') => void
+  setDragging: (d: boolean) => void
+  setPlacingModel: (path: string | null) => void
+  setEraserMode: (mode: boolean) => void
+  setCameraMode: (mode: 'follow' | 'top' | 'free') => void
+  register: (obj: EditorObject) => void
+  updatePosition: (id: string, pos: THREE.Vector3) => void
+  updateRotation: (id: string, rot: number) => void
+  addObject: (obj: EditorObject) => void
+  removeObject: (id: string) => void
+  pushUndo: (entry: UndoEntry) => void
+  undo: () => void
+  hitboxVersion: number
+  bumpHitboxVersion: () => void
+}
+
+/** Mutable ref map — stores Object3D refs for TransformControls */
+export const editorRefs: Record<string, THREE.Object3D> = {}
+
+// Init counter past any saved dynamic IDs to avoid conflicts
+let _dynId = savedDynamicObjects.reduce((max, o) => {
+  const m = o.id.match(/^dyn_(\d+)$/)
+  return m ? Math.max(max, parseInt(m[1]) + 1) : max
+}, 0)
+
+export function nextDynId() {
+  return `dyn_${_dynId++}`
+}
+
+export const useEditorStore = create<EditorState>((set) => ({
+  enabled: false,
+  selectedId: null,
+  mode: 'translate',
+  dragging: false,
+  placingModel: null,
+  eraserMode: false,
+  cameraMode: 'follow',
+  objects: {},
+  dynamicObjects: [...savedDynamicObjects],
+  hiddenIds: new Set<string>(savedHiddenIds),
+  undoStack: [],
+  toggle: () =>
+    set((s) => ({
+      enabled: !s.enabled,
+      selectedId: null,
+      placingModel: null,
+      eraserMode: false,
+    })),
+  select: (id) => set({ selectedId: id }),
+  setMode: (mode) => set({ mode }),
+  setDragging: (dragging) => set({ dragging }),
+  setPlacingModel: (path) =>
+    set({ placingModel: path, selectedId: null, eraserMode: false }),
+  setEraserMode: (mode) =>
+    set({ eraserMode: mode, placingModel: null, selectedId: null }),
+  setCameraMode: (cameraMode) => set({ cameraMode }),
+  register: (obj) =>
+    set((s) => ({
+      objects: { ...s.objects, [obj.id]: obj },
+    })),
+  updatePosition: (id, pos) =>
+    set((s) => {
+      const dynIdx = s.dynamicObjects.findIndex((o) => o.id === id)
+      if (dynIdx !== -1) {
+        const updated = [...s.dynamicObjects]
+        updated[dynIdx] = {
+          ...updated[dynIdx],
+          position: [pos.x, pos.y, pos.z],
+        }
+        return { dynamicObjects: updated }
+      }
+      if (!s.objects[id]) return {}
+      return {
+        objects: {
+          ...s.objects,
+          [id]: { ...s.objects[id], position: [pos.x, pos.y, pos.z] },
+        },
+      }
+    }),
+  updateRotation: (id, rot) =>
+    set((s) => {
+      const dynIdx = s.dynamicObjects.findIndex((o) => o.id === id)
+      if (dynIdx !== -1) {
+        const updated = [...s.dynamicObjects]
+        updated[dynIdx] = { ...updated[dynIdx], rotation: rot }
+        return { dynamicObjects: updated }
+      }
+      if (!s.objects[id]) return {}
+      return {
+        objects: {
+          ...s.objects,
+          [id]: { ...s.objects[id], rotation: rot },
+        },
+      }
+    }),
+  addObject: (obj) =>
+    set((s) => ({ dynamicObjects: [...s.dynamicObjects, obj] })),
+  removeObject: (id) =>
+    set((s) => {
+      // Dynamic object → remove from array
+      if (s.dynamicObjects.some((o) => o.id === id)) {
+        return {
+          dynamicObjects: s.dynamicObjects.filter((o) => o.id !== id),
+          selectedId: s.selectedId === id ? null : s.selectedId,
+        }
+      }
+      // Static object → hide it
+      if (s.objects[id]) {
+        const next = new Set(s.hiddenIds)
+        next.add(id)
+        return { hiddenIds: next, selectedId: null }
+      }
+      return {}
+    }),
+  pushUndo: (entry) =>
+    set((s) => ({ undoStack: [...s.undoStack.slice(-49), entry] })),
+  undo: () =>
+    set((s) => {
+      if (s.undoStack.length === 0) return {}
+      const entry = s.undoStack[s.undoStack.length - 1]
+      const rest = s.undoStack.slice(0, -1)
+
+      // Also update the Object3D ref so the gizmo reflects the change
+      const ref = editorRefs[entry.id]
+      if (ref) {
+        ref.position.set(...entry.position)
+        ref.rotation.y = entry.rotation
+      }
+
+      // Update store state
+      const dynIdx = s.dynamicObjects.findIndex((o) => o.id === entry.id)
+      if (dynIdx !== -1) {
+        const updated = [...s.dynamicObjects]
+        updated[dynIdx] = {
+          ...updated[dynIdx],
+          position: entry.position,
+          rotation: entry.rotation,
+        }
+        return { undoStack: rest, dynamicObjects: updated }
+      }
+      if (s.objects[entry.id]) {
+        return {
+          undoStack: rest,
+          objects: {
+            ...s.objects,
+            [entry.id]: {
+              ...s.objects[entry.id],
+              position: entry.position,
+              rotation: entry.rotation,
+            },
+          },
+        }
+      }
+      return { undoStack: rest }
+    }),
+  hitboxVersion: 0,
+  bumpHitboxVersion: () => set((s) => ({ hitboxVersion: s.hitboxVersion + 1 })),
+}))
