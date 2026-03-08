@@ -12,6 +12,7 @@ const NO_COLLISION_PATTERNS = [
   'hay-bale', 'bedroll', 'signpost', 'flag',
   'tower-watch', 'mast', 'plant_bush', 'campfire',
   'buoy', 'boat-', 'ship-wreck', 'rocks-sand',
+  'tree_', 'Tree_', 'palm-', 'Bush_', 'log', 'stump_',
 ]
 
 export function shouldSkipCollision(modelPath: string): boolean {
@@ -178,7 +179,7 @@ export function getGroundHeight(px: number, py: number, pz: number): number {
       const insideZ = pz > hb.z - hb.halfD - pr && pz < hb.z + hb.halfD + pr
       inside = insideX && insideZ
     }
-    if (inside && Math.abs(py - hb.height) < 0.1 && hb.height > best) {
+    if (inside && py >= hb.height - 0.01 && py <= hb.height + 0.1 && hb.height > best) {
       best = hb.height
     }
   }
@@ -214,7 +215,7 @@ export function resolveCollisions(
       if (dist >= combined) continue // outside circle
 
       // Landing on top
-      if (py >= hb.height - 0.05 && vy <= 0) {
+      if (py >= hb.height - 0.05 && py <= hb.height + 0.15 && vy <= 0) {
         if (hb.height > landY) landY = hb.height
         continue
       }
@@ -245,7 +246,7 @@ export function resolveCollisions(
 
     // ── Landing on top ──
     // Player is above or at box top and within XZ footprint
-    if (insideX && insideZ && py >= hb.height - 0.05 && vy <= 0) {
+    if (insideX && insideZ && py >= hb.height - 0.05 && py <= hb.height + 0.15 && vy <= 0) {
       // Check if this box top is the highest surface under the player
       if (hb.height > landY) {
         landY = hb.height

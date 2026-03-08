@@ -219,6 +219,23 @@ export function Player() {
     const onGround = pos.y <= groundH + 0.01
     const jumpPressed = keys.current.jump
 
+    // Snap to ground when within tolerance and falling — prevents
+    // the gravity block from being skipped while isJumping is still true
+    if (onGround && verticalVelocity.current <= 0) {
+      pos.y = groundH
+      verticalVelocity.current = 0
+      if (isJumpingRef.current) {
+        isJumpingRef.current = false
+        const acts = actionsRef.current
+        if (acts['jump']) acts['jump'].fadeOut(0.15)
+        if (isMoving && acts['run']) {
+          acts['run'].reset().fadeIn(0.15).play()
+        } else if (acts['idle']) {
+          acts['idle'].reset().fadeIn(0.15).play()
+        }
+      }
+    }
+
     if (jumpPressed && !prevJump.current && onGround && !isJumpingRef.current) {
       verticalVelocity.current = JUMP_FORCE
       isJumpingRef.current = true
