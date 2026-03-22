@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import { useGameStore } from '@/stores/gameStore'
 import { useEditorStore } from '@/stores/editorStore'
 import { playerPosition, cameraInput, npcPositions } from '@/lib/playerRef'
+import { testMapScene } from '@/lib/testMapRef'
 
 const CAM_DISTANCE = 8
 const CAM_HEIGHT = 4
@@ -23,6 +24,10 @@ export function CameraRig() {
   const currentAngle = useRef(0)
   const tmpTarget = useRef(new THREE.Vector3())
   const tmpLook = useRef(new THREE.Vector3())
+  const smoothY = useRef(0)
+  const camRaycaster = useRef(new THREE.Raycaster())
+  const camDir = useRef(new THREE.Vector3())
+  const fadedMeshes = useRef<Map<THREE.Mesh, { origMaterial: THREE.MeshStandardMaterial; origOpacity: number; origTransparent: boolean }>>(new Map())
 
   useFrame((_, delta) => {
     // Skip when editor uses its own camera
@@ -31,6 +36,7 @@ export function CameraRig() {
 
     const dt = Math.min(delta, 0.05)
     const { x, y, z } = playerPosition
+    smoothY.current = THREE.MathUtils.lerp(smoothY.current, y, 1 - Math.exp(-8 * dt))
 
     const activeDialogue = useGameStore.getState().activeDialogue
 
@@ -79,8 +85,58 @@ export function CameraRig() {
     const camX = x - Math.sin(angle) * CAM_DISTANCE
     const camZ = z - Math.cos(angle) * CAM_DISTANCE
 
-    tmpTarget.current.set(camX, y + CAM_HEIGHT, camZ)
-    tmpLook.current.set(x, y + LOOK_HEIGHT, z)
+    const lookAt = new THREE.Vector3(x, smoothY.current + LOOK_HEIGHT, z)
+    const idealCamPos = new THREE.Vector3(camX, smoothY.current + CAM_HEIGHT, camZ)
+
+    // ── Obstruction fade: raycast from player toward camera, fade blocking meshes ──
+    const scene = testMapScene.current
+    const currentlyFaded = new Set<THREE.Mesh>()
+
+    if (scene) {
+      camDir.current.subVectors(idealCamPos, lookAt).normalize()
+      const dist = lookAt.distanceTo(idealCamPos)
+      camRaycaster.current.set(lookAt, camDir.current)
+      camRaycaster.current.far = dist
+      const hits = camRaycaster.current.intersectObject(scene, true)
+
+      for (const hit of hits) {
+        const mesh = hit.object as THREE.Mesh
+        if (!mesh.isMesh || Array.isArray(mesh.material)) continue
+        currentlyFaded.add(mesh)
+
+        if (!fadedMeshes.current.has(mesh)) {
+          const origMat = mesh.material as THREE.MeshStandardMaterial
+          const cloned = origMat.clone()
+          cloned.transparent = true
+          fadedMeshes.current.set(mesh, {
+            origMaterial: origMat,
+            origOpacity: origMat.opacity,
+            origTransparent: origMat.transparent,
+          })
+          mesh.material = cloned
+        }
+
+        const mat = mesh.material as THREE.MeshStandardMaterial
+        mat.opacity = THREE.MathUtils.lerp(mat.opacity, 0.15, 1 - Math.exp(-10 * dt))
+      }
+    }
+
+    // Restore meshes no longer blocking
+    for (const [mesh, orig] of fadedMeshes.current) {
+      if (currentlyFaded.has(mesh)) continue
+      const mat = mesh.material as THREE.MeshStandardMaterial
+      mat.opacity = THREE.MathUtils.lerp(mat.opacity, orig.origOpacity, 1 - Math.exp(-8 * dt))
+      if (Math.abs(mat.opacity - orig.origOpacity) < 0.01) {
+        // Restore original material and dispose the clone
+        mesh.material = orig.origMaterial
+        mat.dispose()
+        fadedMeshes.current.delete(mesh)
+      }
+    }
+
+
+    tmpTarget.current.copy(idealCamPos)
+    tmpLook.current.copy(lookAt)
 
     camera.position.lerp(tmpTarget.current, 1 - Math.exp(-POSITION_DAMPING * dt))
     camera.lookAt(tmpLook.current)

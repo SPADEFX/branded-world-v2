@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import { Overlay } from '@/components/ui/Overlay'
+import { GraphicsDashboard } from '@/components/ui/GraphicsDashboard'
 
 const Experience = dynamic(
   () => import('@/components/canvas/Experience').then((m) => ({ default: m.Experience })),
@@ -25,6 +26,7 @@ export default function Home() {
     <main className="h-screen w-screen">
       <Experience />
       <Overlay />
+      <GraphicsDashboard />
     </main>
   )
 }

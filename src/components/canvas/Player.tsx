@@ -1,24 +1,72 @@
 'use client'
 
-import { useRef, useEffect, useMemo } from 'react'
+import { useRef, useEffect } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { useInput } from '@/hooks/useInput'
 import { useGameStore } from '@/stores/gameStore'
 import { playerPosition, playerRotation, cameraInput, npcPositions } from '@/lib/playerRef'
-import { resolveCollisions, getGroundHeight } from '@/lib/hitboxes'
-import { isInsideLand } from '@/lib/worldShape'
+import { testMapScene } from '@/lib/testMapRef'
 
-const MOVE_SPEED = 6
+const MOVE_SPEED = 4
 const ACCELERATION = 10
 const DECELERATION = 8
 const ROTATION_SPEED = 12
 const JUMP_FORCE = 6
 const GRAVITY = 14
+const PLAYER_RADIUS = 0.3
+const STEP_HEIGHT = 0.5   // max step the player can climb
+const WALL_CHECK_DIST = PLAYER_RADIUS + 0.05
 const DIALOGUE_STAND_DIST = 1.8
 const DIALOGUE_MOVE_SPEED = 4
+
 const _camDir = new THREE.Vector3()
+const _downRaycaster = new THREE.Raycaster()
+const _wallRaycaster = new THREE.Raycaster()
+const _downDir = new THREE.Vector3(0, -1, 0)
+const _rayOrigin = new THREE.Vector3()
+const _wallDirs = [
+  new THREE.Vector3(1, 0, 0),
+  new THREE.Vector3(-1, 0, 0),
+  new THREE.Vector3(0, 0, 1),
+  new THREE.Vector3(0, 0, -1),
+]
+
+function getGroundHeight(px: number, py: number, pz: number): number {
+  const scene = testMapScene.current
+  if (!scene) return 0
+  _rayOrigin.set(px, py + 10, pz)
+  _downRaycaster.set(_rayOrigin, _downDir)
+  const hits = _downRaycaster.intersectObject(scene, true)
+  for (const hit of hits) {
+    if (hit.point.y <= py + STEP_HEIGHT) return hit.point.y
+  }
+  return -Infinity
+}
+
+/** Returns how much to push the player back per axis to avoid walls. */
+function resolveWalls(px: number, py: number, pz: number): { dx: number; dz: number } {
+  const scene = testMapScene.current
+  if (!scene) return { dx: 0, dz: 0 }
+
+  let dx = 0
+  let dz = 0
+  // Cast from chest height (py + 0.8) to avoid floor hits
+  _rayOrigin.set(px, py + 0.8, pz)
+
+  for (const dir of _wallDirs) {
+    _wallRaycaster.set(_rayOrigin, dir)
+    _wallRaycaster.far = WALL_CHECK_DIST
+    const hits = _wallRaycaster.intersectObject(scene, true)
+    if (hits.length > 0) {
+      const pen = WALL_CHECK_DIST - hits[0].distance
+      dx -= dir.x * pen
+      dz -= dir.z * pen
+    }
+  }
+  return { dx, dz }
+}
 
 export function Player() {
   const { camera } = useThree()
@@ -32,12 +80,10 @@ export function Player() {
   const verticalVelocity = useRef(0)
   const keys = useInput()
 
-  // ── Load model + animations ──
   const { scene: model } = useGLTF('/models/character/Knight.glb')
   const { animations: moveAnims } = useGLTF('/models/character/anims/MovementBasic.glb')
   const { animations: generalAnims } = useGLTF('/models/character/anims/General.glb')
 
-  // ── Apply texture + shadows ──
   useEffect(() => {
     model.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
@@ -48,7 +94,6 @@ export function Player() {
     })
   }, [model])
 
-  // ── Manual AnimationMixer ──
   const mixerRef = useRef<THREE.AnimationMixer | null>(null)
   const actionsRef = useRef<Record<string, THREE.AnimationAction>>({})
 
@@ -69,11 +114,7 @@ export function Player() {
       actionsRef.current['idle'] = action
       action.play()
     }
-
-    if (runClip) {
-      actionsRef.current['run'] = mixer.clipAction(runClip)
-    }
-
+    if (runClip) actionsRef.current['run'] = mixer.clipAction(runClip)
     if (jumpClip) {
       const action = mixer.clipAction(jumpClip)
       action.loop = THREE.LoopOnce
@@ -81,40 +122,28 @@ export function Player() {
       actionsRef.current['jump'] = action
     }
 
-    return () => {
-      mixer.stopAllAction()
-      mixer.uncacheRoot(model)
-    }
+    return () => { mixer.stopAllAction(); mixer.uncacheRoot(model) }
   }, [model, moveAnims, generalAnims])
 
-  // ── Game loop ──
   useFrame((_, delta) => {
     if (!groupRef.current) return
-
     const dt = Math.min(delta, 0.05)
     mixerRef.current?.update(dt)
 
     const state = useGameStore.getState()
     const { joystickInput, activeModal, activeDialogue, nearbyZone, nearbyNPC, showOnboarding } = state
 
-    // ── Interaction ──
     const interact = keys.current.interact
     if (interact && !prevInteract.current) {
-      if (activeDialogue) {
-        state.advanceDialogue()
-      } else if (activeModal) {
-        state.closeModal()
-      } else if (nearbyNPC && !showOnboarding) {
-        state.openDialogue(nearbyNPC)
-      } else if (nearbyZone && !showOnboarding) {
-        state.openModal(nearbyZone)
-      }
+      if (activeDialogue) state.advanceDialogue()
+      else if (activeModal) state.closeModal()
+      else if (nearbyNPC && !showOnboarding) state.openDialogue(nearbyNPC)
+      else if (nearbyZone && !showOnboarding) state.openModal(nearbyZone)
     }
     prevInteract.current = interact
-
     if (activeModal || showOnboarding) return
 
-    // ── Dialogue positioning: walk to NPC and face them ──
+    // ── Dialogue positioning ──
     if (activeDialogue) {
       const npcPos = npcPositions[activeDialogue.npcId]
       if (npcPos) {
@@ -122,105 +151,67 @@ export function Player() {
         const dx = npcPos.x - pos.x
         const dz = npcPos.z - pos.z
         const dist = Math.sqrt(dx * dx + dz * dz)
-
         const gap = Math.abs(dist - DIALOGUE_STAND_DIST)
-
         if (gap > 0.1) {
-          // Move toward or away from NPC to reach DIALOGUE_STAND_DIST
           const nx = dx / dist
           const nz = dz / dist
-          const sign = dist > DIALOGUE_STAND_DIST ? 1 : -1 // 1 = approach, -1 = back up
+          const sign = dist > DIALOGUE_STAND_DIST ? 1 : -1
           const step = Math.min(DIALOGUE_MOVE_SPEED * dt, gap)
           pos.x += nx * sign * step
           pos.z += nz * sign * step
-
-          // Switch to run/walk if not already
           if (!isMovingRef.current) {
             const acts = actionsRef.current
-            if (acts['idle'] && acts['run']) {
-              acts['idle'].crossFadeTo(acts['run'], 0.2, true)
-              acts['run'].enabled = true
-              acts['run'].play()
-            }
+            if (acts['idle'] && acts['run']) { acts['idle'].crossFadeTo(acts['run'], 0.2, true); acts['run'].enabled = true; acts['run'].play() }
             isMovingRef.current = true
           }
         } else {
-          // In position — switch to idle
           if (isMovingRef.current) {
             const acts = actionsRef.current
-            if (acts['run'] && acts['idle']) {
-              acts['run'].crossFadeTo(acts['idle'], 0.2, true)
-              acts['idle'].enabled = true
-              acts['idle'].play()
-            }
+            if (acts['run'] && acts['idle']) { acts['run'].crossFadeTo(acts['idle'], 0.2, true); acts['idle'].enabled = true; acts['idle'].play() }
             isMovingRef.current = false
           }
         }
-
-        // Rotate to face NPC
         const targetRot = Math.atan2(dx, dz)
         currentRotation.current = lerpAngle(currentRotation.current, targetRot, 8 * dt)
         groupRef.current.rotation.y = currentRotation.current
-
-        // Publish position
-        playerPosition.x = pos.x
-        playerPosition.y = pos.y
-        playerPosition.z = pos.z
-        playerRotation.y = currentRotation.current
-        cameraInput.x = 0
+        playerPosition.x = pos.x; playerPosition.y = pos.y; playerPosition.z = pos.z
+        playerRotation.y = currentRotation.current; cameraInput.x = 0
       }
       return
     }
 
-    // ── Gather input ──
-    let ix = 0
-    let iz = 0
-
+    // ── Input ──
+    let ix = 0, iz = 0
     if (keys.current.forward) iz -= 1
     if (keys.current.backward) iz += 1
     if (keys.current.left) ix -= 1
     if (keys.current.right) ix += 1
-
-    if (Math.abs(joystickInput.x) > 0.1 || Math.abs(joystickInput.y) > 0.1) {
-      ix = joystickInput.x
-      iz = joystickInput.y
-    }
-
+    if (Math.abs(joystickInput.x) > 0.1 || Math.abs(joystickInput.y) > 0.1) { ix = joystickInput.x; iz = joystickInput.y }
     const len = Math.sqrt(ix * ix + iz * iz)
     if (len > 1) { ix /= len; iz /= len }
 
-    // ── Transform input to camera-relative world space ──
     camera.getWorldDirection(_camDir)
-    _camDir.y = 0
-    _camDir.normalize()
-    const rx = -_camDir.z
-    const rz = _camDir.x
+    _camDir.y = 0; _camDir.normalize()
+    const rx = -_camDir.z; const rz = _camDir.x
     const wx = ix * rx + (-iz) * _camDir.x
     const wz = ix * rz + (-iz) * _camDir.z
 
-    // ── Velocity ──
     const vel = velocityRef.current
     const isMoving = len > 0.1
-
     if (isMoving) {
       vel.x = THREE.MathUtils.lerp(vel.x, wx * MOVE_SPEED, ACCELERATION * dt)
       vel.y = THREE.MathUtils.lerp(vel.y, wz * MOVE_SPEED, ACCELERATION * dt)
-      // Character always turns to face movement direction
-      const targetRot = Math.atan2(wx, wz)
-      currentRotation.current = lerpAngle(currentRotation.current, targetRot, ROTATION_SPEED * dt)
+      currentRotation.current = lerpAngle(currentRotation.current, Math.atan2(wx, wz), ROTATION_SPEED * dt)
     } else {
       vel.x = THREE.MathUtils.lerp(vel.x, 0, DECELERATION * dt)
       vel.y = THREE.MathUtils.lerp(vel.y, 0, DECELERATION * dt)
     }
 
-    // ── Jump ──
     const pos = groupRef.current.position
     const groundH = getGroundHeight(pos.x, pos.y, pos.z)
-    const onGround = pos.y <= groundH + 0.01
-    const jumpPressed = keys.current.jump
+    const onGround = groundH > -Infinity && pos.y <= groundH + 0.05
 
-    // Snap to ground when within tolerance and falling — prevents
-    // the gravity block from being skipped while isJumping is still true
+    // ── Snap to ground / gravity ──
     if (onGround && verticalVelocity.current <= 0) {
       pos.y = groundH
       verticalVelocity.current = 0
@@ -228,22 +219,18 @@ export function Player() {
         isJumpingRef.current = false
         const acts = actionsRef.current
         if (acts['jump']) acts['jump'].fadeOut(0.15)
-        if (isMoving && acts['run']) {
-          acts['run'].reset().fadeIn(0.15).play()
-        } else if (acts['idle']) {
-          acts['idle'].reset().fadeIn(0.15).play()
-        }
+        if (isMoving && acts['run']) acts['run'].reset().fadeIn(0.15).play()
+        else if (acts['idle']) acts['idle'].reset().fadeIn(0.15).play()
       }
     }
 
+    // ── Jump ──
+    const jumpPressed = keys.current.jump
     if (jumpPressed && !prevJump.current && onGround && !isJumpingRef.current) {
       verticalVelocity.current = JUMP_FORCE
       isJumpingRef.current = true
-
-      // Play jump animation
       const acts = actionsRef.current
       if (acts['jump']) {
-        // Fade out current anim
         if (isMoving && acts['run']) acts['run'].fadeOut(0.1)
         else if (acts['idle']) acts['idle'].fadeOut(0.1)
         acts['jump'].reset().fadeIn(0.1).play()
@@ -251,89 +238,42 @@ export function Player() {
     }
     prevJump.current = jumpPressed
 
-    // Apply gravity
     if (!onGround || verticalVelocity.current > 0) {
       verticalVelocity.current -= GRAVITY * dt
       pos.y += verticalVelocity.current * dt
-
-      // Land on ground (or hitbox surface)
-      if (pos.y <= groundH) {
+      if (groundH > -Infinity && pos.y < groundH) {
         pos.y = groundH
         verticalVelocity.current = 0
-
-        if (isJumpingRef.current) {
-          isJumpingRef.current = false
-          const acts = actionsRef.current
-          if (acts['jump']) acts['jump'].fadeOut(0.15)
-          if (isMoving && acts['run']) {
-            acts['run'].reset().fadeIn(0.15).play()
-          } else if (acts['idle']) {
-            acts['idle'].reset().fadeIn(0.15).play()
-          }
-        }
       }
     }
 
-    // ── Animation crossfade (idle ↔ run, only when grounded) ──
+    // ── Move + wall collision ──
+    pos.x += vel.x * dt
+    pos.z += vel.y * dt
+
+    const walls = resolveWalls(pos.x, pos.y, pos.z)
+    pos.x += walls.dx
+    pos.z += walls.dz
+
+    // ── Animation crossfade ──
     if (!isJumpingRef.current && isMoving !== isMovingRef.current) {
       const acts = actionsRef.current
       if (isMoving && acts['idle'] && acts['run']) {
-        acts['idle'].crossFadeTo(acts['run'], 0.2, true)
-        acts['run'].enabled = true
-        acts['run'].play()
+        acts['idle'].crossFadeTo(acts['run'], 0.2, true); acts['run'].enabled = true; acts['run'].play()
       } else if (!isMoving && acts['run'] && acts['idle']) {
-        acts['run'].crossFadeTo(acts['idle'], 0.2, true)
-        acts['idle'].enabled = true
-        acts['idle'].play()
+        acts['run'].crossFadeTo(acts['idle'], 0.2, true); acts['idle'].enabled = true; acts['idle'].play()
       }
       isMovingRef.current = isMoving
     }
 
-    // ── Apply position ──
-    pos.x += vel.x * dt
-    pos.z += vel.y * dt
-
-    // ── Hitbox collision (AABB boxes) ──
-    const [cx, landY, cz] = resolveCollisions(pos.x, pos.y, pos.z, verticalVelocity.current)
-    pos.x = cx
-    pos.z = cz
-
-    // Land on top of a hitbox
-    if (landY > 0 && pos.y <= landY + 0.05 && verticalVelocity.current <= 0) {
-      pos.y = landY
-      verticalVelocity.current = 0
-      if (isJumpingRef.current) {
-        isJumpingRef.current = false
-        const acts = actionsRef.current
-        if (acts['jump']) acts['jump'].fadeOut(0.15)
-        if (isMoving && acts['run']) {
-          acts['run'].reset().fadeIn(0.15).play()
-        } else if (acts['idle']) {
-          acts['idle'].reset().fadeIn(0.15).play()
-        }
-      }
-    }
-
-    // Polygon boundary — push back to previous valid position
-    if (!isInsideLand(pos.x, pos.z)) {
-      pos.x = playerPosition.x
-      pos.z = playerPosition.z
-    }
-
-    // ── Apply rotation ──
     groupRef.current.rotation.y = currentRotation.current
-
-    // ── Publish position + rotation ──
-    playerPosition.x = pos.x
-    playerPosition.y = pos.y
-    playerPosition.z = pos.z
-    playerRotation.y = currentRotation.current
-    cameraInput.x = ix
+    playerPosition.x = pos.x; playerPosition.y = pos.y; playerPosition.z = pos.z
+    playerRotation.y = currentRotation.current; cameraInput.x = ix
   })
 
   return (
-    <group ref={groupRef} position={[0, 0, 20]}>
-      <primitive object={model} scale={0.85} />
+    <group ref={groupRef} position={[0, 5, 0]}>
+      <primitive object={model} scale={0.5} />
     </group>
   )
 }
