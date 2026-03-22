@@ -12,12 +12,28 @@ const NO_COLLISION_PATTERNS = [
   'hay-bale', 'bedroll', 'signpost', 'flag',
   'tower-watch', 'mast', 'plant_bush', 'campfire',
   'buoy', 'boat-', 'ship-wreck', 'rocks-sand',
+]
+
+// Objects that block walking (XZ push-out) but can NOT be landed on top of
+const NO_LANDING_PATTERNS = [
   'tree_', 'Tree_', 'palm-', 'Bush_', 'log', 'stump_',
 ]
 
 export function shouldSkipCollision(modelPath: string): boolean {
   const name = modelPath.split('/').pop()?.replace('.glb', '') ?? ''
   return NO_COLLISION_PATTERNS.some((p) => name.startsWith(p))
+}
+
+export function shouldSkipLanding(id: string): boolean {
+  return NO_LANDING_PATTERNS.some((p) => id.includes(p))
+}
+
+/** Trunk radius for tree/palm/bush models — much smaller than the full canopy AABB. */
+const TRUNK_RADIUS = 0.3
+
+function isTrunkModel(modelPath: string): boolean {
+  const name = modelPath.split('/').pop()?.replace('.glb', '') ?? ''
+  return NO_LANDING_PATTERNS.some((p) => name.startsWith(p))
 }
 
 // ── Hitbox data ─────────────────────────────────────────────────────────────
@@ -130,6 +146,14 @@ export function registerModelHitboxes(
 
   // No override — default auto behavior
   if (shouldSkipCollision(modelPath)) return
+
+  // Trees/palms/bushes: use small trunk circle instead of full canopy AABB
+  if (isTrunkModel(modelPath)) {
+    const bounds = getModelBounds(modelPath, scene)
+    registerHitbox(baseId, worldX, worldZ, TRUNK_RADIUS * scale, 0, bounds.height * scale, true)
+    return
+  }
+
   const bounds = getModelBounds(modelPath, scene)
   registerHitbox(baseId, worldX, worldZ, bounds.halfW * scale, bounds.halfD * scale, bounds.height * scale)
 }
@@ -169,6 +193,7 @@ export function getGroundHeight(px: number, py: number, pz: number): number {
   let best = 0 // ground level
   for (const id in hitboxMap) {
     const hb = hitboxMap[id]
+    if (shouldSkipLanding(id)) continue // trees etc. — no landing
     let inside: boolean
     if (hb.circle) {
       const dx = px - hb.x
@@ -214,8 +239,8 @@ export function resolveCollisions(
 
       if (dist >= combined) continue // outside circle
 
-      // Landing on top
-      if (py >= hb.height - 0.05 && py <= hb.height + 0.15 && vy <= 0) {
+      // Landing on top (skip for trees etc.)
+      if (!shouldSkipLanding(id) && py >= hb.height - 0.05 && py <= hb.height + 0.15 && vy <= 0) {
         if (hb.height > landY) landY = hb.height
         continue
       }
@@ -244,9 +269,9 @@ export function resolveCollisions(
     const insideX = x > left && x < right
     const insideZ = z > front && z < back
 
-    // ── Landing on top ──
+    // ── Landing on top (skip for trees etc.) ──
     // Player is above or at box top and within XZ footprint
-    if (insideX && insideZ && py >= hb.height - 0.05 && py <= hb.height + 0.15 && vy <= 0) {
+    if (!shouldSkipLanding(id) && insideX && insideZ && py >= hb.height - 0.05 && py <= hb.height + 0.15 && vy <= 0) {
       // Check if this box top is the highest surface under the player
       if (hb.height > landY) {
         landY = hb.height
