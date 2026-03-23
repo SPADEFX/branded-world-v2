@@ -1,6 +1,7 @@
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
-const THRESHOLD = 3
+const THRESHOLD = 2
 
 /**
  * Groups meshes in the scene by geometry+material, creates InstancedMesh for
@@ -22,12 +23,15 @@ export function autoInstance(scene: THREE.Object3D): THREE.Mesh[] {
     groups.get(key)!.push(m)
   }
 
+  let instanced = 0, singletons = 0
   const remaining: THREE.Mesh[] = []
   for (const [, group] of groups) {
     if (group.length < THRESHOLD) {
       remaining.push(...group)
+      singletons += group.length
       continue
     }
+    instanced += group.length
 
     const first = group[0]
     // Force DoubleSide so mirrored instances (negative scale) don't have
@@ -53,5 +57,58 @@ export function autoInstance(scene: THREE.Object3D): THREE.Mesh[] {
     scene.add(inst)
   }
 
+  console.log(`[autoInstance] instanced=${instanced} singletons=${singletons} groups=${groups.size}`)
   return remaining
+}
+
+/**
+ * Merges singleton meshes that share the same material into one mesh each.
+ * Run after autoInstance on the returned singletons to further reduce draw calls.
+ */
+export function mergeByMaterial(scene: THREE.Object3D, meshes: THREE.Mesh[]): void {
+  const groups = new Map<string, THREE.Mesh[]>()
+  for (const m of meshes) {
+    if (Array.isArray(m.material)) continue
+    const key = (m.material as THREE.Material).uuid
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(m)
+  }
+
+  // Compute scene's world matrix so we can express child transforms relative to it
+  scene.updateWorldMatrix(true, true)
+  const sceneInverse = new THREE.Matrix4().copy(scene.matrixWorld).invert()
+
+  const attrKey = (geo: THREE.BufferGeometry) =>
+    Object.keys(geo.attributes).sort().join(',')
+
+  let mergedCount = 0, groupCount = 0
+  for (const [, group] of groups) {
+    if (group.length < 2) continue
+
+    // Filter to meshes whose attributes are compatible with the first one
+    const key = attrKey(group[0].geometry)
+    const compatible = group.filter((m) => attrKey(m.geometry) === key)
+    if (compatible.length < 2) continue
+
+    const geos = compatible.map((m) => {
+      m.updateWorldMatrix(true, false)
+      const rel = new THREE.Matrix4().multiplyMatrices(sceneInverse, m.matrixWorld)
+      const g = m.geometry.clone()
+      g.applyMatrix4(rel)
+      return g
+    })
+
+    const merged = mergeGeometries(geos, false)
+    geos.forEach((g) => g.dispose())
+    if (!merged) continue
+
+    const mesh = new THREE.Mesh(merged, compatible[0].material)
+    mesh.castShadow = compatible[0].castShadow
+    mesh.receiveShadow = compatible[0].receiveShadow
+    scene.add(mesh)
+    for (const m of compatible) m.parent?.remove(m)
+    mergedCount += compatible.length
+    groupCount++
+  }
+  console.log(`[mergeByMaterial] merged ${mergedCount} meshes into ${groupCount}`)
 }

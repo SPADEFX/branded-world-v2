@@ -142,15 +142,15 @@ export function CameraRig() {
     const idealCamPos = new THREE.Vector3(camX, smoothY.current + CAM_HEIGHT + vOffset, camZ)
 
     // ── Obstruction fade: raycast from player toward camera, fade blocking meshes ──
-    const scene = testMapScene.current
+    const scenes = testMapScene.current
     const currentlyFaded = new Set<THREE.Mesh>()
 
-    if (scene) {
+    if (scenes.length) {
       camDir.current.subVectors(idealCamPos, lookAt).normalize()
       const dist = lookAt.distanceTo(idealCamPos)
       camRaycaster.current.set(lookAt, camDir.current)
       camRaycaster.current.far = dist
-      const hits = camRaycaster.current.intersectObject(scene, true)
+      const hits = camRaycaster.current.intersectObjects(scenes, true)
 
       for (const hit of hits) {
         const mesh = hit.object as THREE.Mesh

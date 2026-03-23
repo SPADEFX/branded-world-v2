@@ -1,10 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
 import { useGameStore } from '@/stores/gameStore'
 import { ZONES } from '@/config/zones'
 import { NPC_LIST } from '@/config/npcs'
-import { COLLECTIBLES } from '@/config/collectibles'
 import { motion, AnimatePresence } from 'framer-motion'
 
 interface HUDProps {
@@ -17,18 +15,6 @@ export function HUD({ isMobile }: HUDProps) {
   const visitedZones = useGameStore((s) => s.visitedZones)
   const activeModal = useGameStore((s) => s.activeModal)
   const activeDialogue = useGameStore((s) => s.activeDialogue)
-  const score = useGameStore((s) => s.score)
-  const collectedCount = useGameStore((s) => s.collectedIds.length)
-  const lastCollected = useGameStore((s) => s.lastCollected)
-
-  // Flash animation for score popup
-  const [popup, setPopup] = useState<{ points: number; key: number } | null>(null)
-  useEffect(() => {
-    if (!lastCollected) return
-    setPopup({ points: lastCollected.points, key: lastCollected.time })
-    const timer = setTimeout(() => setPopup(null), 1200)
-    return () => clearTimeout(timer)
-  }, [lastCollected])
 
   const zone = ZONES.find((z) => z.id === nearbyZone)
   const npc = NPC_LIST.find((n) => n.id === nearbyNPC)
@@ -45,31 +31,6 @@ export function HUD({ isMobile }: HUDProps) {
           <span className="text-xs text-white/50">discovered</span>
         </div>
 
-        {/* Gem counter */}
-        <div className="relative flex items-center gap-2 rounded-full bg-black/30 px-4 py-2 backdrop-blur-md">
-          <span style={{ fontSize: '14px' }}>&#x1F48E;</span>
-          <span className="text-sm font-medium text-white/90">
-            {collectedCount}/{COLLECTIBLES.length}
-          </span>
-          <span className="text-xs text-white/50">
-            ({score} pts)
-          </span>
-          {/* Score popup */}
-          <AnimatePresence>
-            {popup && (
-              <motion.span
-                key={popup.key}
-                initial={{ opacity: 1, y: 0 }}
-                animate={{ opacity: 0, y: -30 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 1 }}
-                className="absolute -top-2 right-0 text-sm font-bold text-yellow-300"
-              >
-                +{popup.points}
-              </motion.span>
-            )}
-          </AnimatePresence>
-        </div>
       </div>
 
       {/* Interaction prompt */}

@@ -12,6 +12,8 @@ export function EditorSidebar() {
   const toggle = useEditorStore((s) => s.toggle)
   const eraserMode = useEditorStore((s) => s.eraserMode)
   const setEraserMode = useEditorStore((s) => s.setEraserMode)
+  const teleportMode = useEditorStore((s) => s.teleportMode)
+  const setTeleportMode = useEditorStore((s) => s.setTeleportMode)
   const cameraMode = useEditorStore((s) => s.cameraMode)
   const setCameraMode = useEditorStore((s) => s.setCameraMode)
   const selectedId = useEditorStore((s) => s.selectedId)
@@ -65,6 +67,11 @@ export function EditorSidebar() {
           {eraserMode && (
             <div className="mx-3 mt-3 rounded-lg bg-red-500/20 px-3 py-2 text-red-300">
               Hover an object and click to delete it.
+            </div>
+          )}
+          {teleportMode && (
+            <div className="mx-3 mt-3 rounded-lg bg-emerald-500/20 px-3 py-2 text-emerald-300">
+              Click anywhere on the map to teleport there.
             </div>
           )}
 
@@ -126,6 +133,16 @@ export function EditorSidebar() {
                 }`}
               >
                 Eraser
+              </button>
+              <button
+                onClick={() => setTeleportMode(!teleportMode)}
+                className={`flex-1 rounded-lg px-2 py-1.5 transition-colors ${
+                  teleportMode
+                    ? 'bg-emerald-500/40 text-emerald-200'
+                    : 'bg-white/5 hover:bg-white/10'
+                }`}
+              >
+                TP
               </button>
             </div>
 

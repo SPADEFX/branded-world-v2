@@ -13,10 +13,10 @@ import { EditorGizmo } from './EditorGizmo'
 import { DynamicObjects } from './DynamicObjects'
 import { EditorCamera } from './EditorCamera'
 import { HitboxVisuals } from './HitboxVisuals'
-import { Collectibles } from './Collectibles'
 import { SeasonalDecorations } from './SeasonalDecorations'
 import { Environment } from './Environment'
 import { DistanceCuller } from './DistanceCuller'
+import { TeleportGhost } from './TeleportGhost'
 import { FPSTracker } from './FPSTracker'
 import { EffectComposer, Bloom, HueSaturation, BrightnessContrast } from '@react-three/postprocessing'
 import { useGraphicsStore } from '@/stores/graphicsStore'
@@ -48,7 +48,6 @@ function SceneContents() {
       <Player />
       <InteractionZones />
       <NPCs />
-      <Collectibles />
       <SeasonalDecorations />
       <Environment />
       <DistanceCuller />
@@ -58,6 +57,7 @@ function SceneContents() {
       <DynamicObjects />
       <HitboxVisuals />
       <EditorCamera />
+      <TeleportGhost />
       <PostProcessing />
       <FPSTracker />
     </>

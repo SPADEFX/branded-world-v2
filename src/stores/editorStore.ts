@@ -23,6 +23,7 @@ interface EditorState {
   mode: 'translate' | 'rotate'
   dragging: boolean
   eraserMode: boolean
+  teleportMode: boolean
   cameraMode: 'follow' | 'top' | 'free'
   objects: Record<string, EditorObject>
   dynamicObjects: EditorObject[]
@@ -33,6 +34,7 @@ interface EditorState {
   setMode: (mode: 'translate' | 'rotate') => void
   setDragging: (d: boolean) => void
   setEraserMode: (mode: boolean) => void
+  setTeleportMode: (mode: boolean) => void
   setCameraMode: (mode: 'follow' | 'top' | 'free') => void
   register: (obj: EditorObject) => void
   updatePosition: (id: string, pos: THREE.Vector3) => void
@@ -64,6 +66,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   mode: 'translate',
   dragging: false,
   eraserMode: false,
+  teleportMode: false,
   cameraMode: 'follow',
   objects: {},
   dynamicObjects: [...savedDynamicObjects],
@@ -80,6 +83,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   setDragging: (dragging) => set({ dragging }),
   setEraserMode: (mode) =>
     set({ eraserMode: mode, selectedId: null }),
+  setTeleportMode: (mode) =>
+    set({ teleportMode: mode, selectedId: null }),
   setCameraMode: (cameraMode) => set({ cameraMode }),
   register: (obj) =>
     set((s) => ({

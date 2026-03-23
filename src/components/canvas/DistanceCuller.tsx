@@ -6,7 +6,7 @@ import * as THREE from 'three'
 import { visualMeshes } from '@/lib/testMapRef'
 import { playerPosition } from '@/lib/playerRef'
 
-const CULL_DIST_SQ = 75 * 75   // squared — no sqrt needed
+const CULL_DIST_SQ = 200 * 200   // squared — no sqrt needed
 const CHECK_INTERVAL = 10       // check every N frames
 
 const _playerVec = new THREE.Vector3()

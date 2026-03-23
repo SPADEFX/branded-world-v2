@@ -271,6 +271,82 @@ function Items({ items }: { items: P[] }) {
   );
 }
 
+/* ── Instanced rendering — no editor/hitbox, for dense procedural props ── */
+
+function InstancedMeshNode({
+  geometry,
+  material,
+  matrices,
+}: {
+  geometry: THREE.BufferGeometry;
+  material: THREE.Material;
+  matrices: THREE.Matrix4[];
+}) {
+  const ref = useRef<THREE.InstancedMesh>(null!);
+  useEffect(() => {
+    for (let i = 0; i < matrices.length; i++) ref.current.setMatrixAt(i, matrices[i]);
+    ref.current.instanceMatrix.needsUpdate = true;
+    ref.current.computeBoundingSphere();
+  }, [matrices]);
+  return <instancedMesh ref={ref} args={[geometry, material, matrices.length]} castShadow receiveShadow />;
+}
+
+function InstancedModelGroup({ model, instances }: { model: string; instances: P[] }) {
+  const { scene } = useGLTF(model);
+  const meshDefs = useMemo(() => {
+    const result: { geometry: THREE.BufferGeometry; material: THREE.Material }[] = [];
+    scene.traverse((c) => {
+      if (!(c as THREE.Mesh).isMesh) return;
+      const mesh = c as THREE.Mesh;
+      if (Array.isArray(mesh.material)) return;
+      const mat = (mesh.material as THREE.Material).clone() as THREE.MeshStandardMaterial;
+      if ("metalness" in mat) mat.metalness = 0;
+      mat.side = THREE.DoubleSide;
+      mat.needsUpdate = true;
+      result.push({ geometry: mesh.geometry, material: mat });
+    });
+    return result;
+  }, [scene]);
+
+  const matrices = useMemo(() => {
+    const dummy = new THREE.Object3D();
+    return instances.map(({ position, rotation = 0, scale = 1 }) => {
+      dummy.position.set(...position);
+      dummy.rotation.set(0, rotation, 0);
+      dummy.scale.setScalar(scale);
+      dummy.updateMatrix();
+      return dummy.matrix.clone();
+    });
+  }, [instances]);
+
+  return (
+    <>
+      {meshDefs.map(({ geometry, material }, i) => (
+        <InstancedMeshNode key={i} geometry={geometry} material={material} matrices={matrices} />
+      ))}
+    </>
+  );
+}
+
+function InstancedGroup({ items }: { items: P[] }) {
+  const byModel = useMemo(() => {
+    const map = new Map<string, P[]>();
+    for (const item of items) {
+      if (!map.has(item.model)) map.set(item.model, []);
+      map.get(item.model)!.push(item);
+    }
+    return map;
+  }, [items]);
+
+  return (
+    <>
+      {[...byModel.entries()].map(([model, instances]) => (
+        <InstancedModelGroup key={model} model={model} instances={instances} />
+      ))}
+    </>
+  );
+}
+
 function TexItems({ items, texture }: { items: P[]; texture: THREE.Texture }) {
   return (
     <>
@@ -1892,7 +1968,7 @@ function ForestBarrier() {
     return result;
   }, []);
 
-  return <Items items={items} />;
+  return <InstancedGroup items={items} />;
 }
 
 /* ── Mountain Edge — scattered rocks near the north coast ── */
@@ -1937,7 +2013,7 @@ function MountainBarrier() {
     return result;
   }, []);
 
-  return <Items items={items} />;
+  return <InstancedGroup items={items} />;
 }
 
 /* ── Bridge — connects main island to secondary island ────── */

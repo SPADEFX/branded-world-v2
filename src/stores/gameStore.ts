@@ -1,7 +1,5 @@
 import { create } from 'zustand'
 import { NPC_LIST } from '@/config/npcs'
-import { COLLECTIBLE_POINTS } from '@/config/collectibles'
-import type { CollectibleConfig } from '@/config/collectibles'
 
 interface GameState {
   // Interaction
@@ -12,11 +10,6 @@ interface GameState {
   // NPC
   nearbyNPC: string | null
   activeDialogue: { npcId: string; lineIndex: number } | null
-
-  // Collectibles
-  collectedIds: string[]
-  score: number
-  lastCollected: { id: string; points: number; time: number } | null
 
   // Onboarding
   showOnboarding: boolean
@@ -31,7 +24,6 @@ interface GameState {
   openDialogue: (npcId: string) => void
   advanceDialogue: () => void
   closeDialogue: () => void
-  collectItem: (item: CollectibleConfig) => void
   dismissOnboarding: () => void
   setJoystickInput: (input: { x: number; y: number }) => void
 }
@@ -42,9 +34,6 @@ export const useGameStore = create<GameState>((set, get) => ({
   visitedZones: [],
   nearbyNPC: null,
   activeDialogue: null,
-  collectedIds: [],
-  score: 0,
-  lastCollected: null,
   showOnboarding: true,
   joystickInput: { x: 0, y: 0 },
 
@@ -74,17 +63,6 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   closeDialogue: () => set({ activeDialogue: null }),
-
-  collectItem: (item) => {
-    const { collectedIds, score } = get()
-    if (collectedIds.includes(item.id)) return
-    const points = COLLECTIBLE_POINTS[item.type]
-    set({
-      collectedIds: [...collectedIds, item.id],
-      score: score + points,
-      lastCollected: { id: item.id, points, time: Date.now() },
-    })
-  },
 
   dismissOnboarding: () => set({ showOnboarding: false }),
   setJoystickInput: (input) => set({ joystickInput: input }),

@@ -1,20 +1,40 @@
 'use client'
 
-import { useRef, useEffect, useMemo } from 'react'
+import { useRef, useEffect, useMemo, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGLTF, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js'
 import { useGameStore } from '@/stores/gameStore'
 import { useEditorStore } from '@/stores/editorStore'
-import { playerPosition, npcPositions } from '@/lib/playerRef'
+import { playerPosition, playerRotation, npcPositions } from '@/lib/playerRef'
 import { NPC_LIST } from '@/config/npcs'
+import { isInsideLand, distanceToShore } from '@/lib/worldShape'
+import { testMapScene } from '@/lib/testMapRef'
 import type { NPCConfig, NPCActivity, NPCProp } from '@/types'
 
 const WANDER_RADIUS = 3
 const WANDER_SPEED = 2
 const IDLE_MIN = 3
 const IDLE_MAX = 7
+const CULL_DIST_SQ = 40 * 40
+const BUBBLE_DIST_SQ = 10 * 10
+const FACING_DOT = 0.2  // cos(~78°) — player roughly looking toward NPC
+
+/* ── Terrain raycasting ──────────────────────────────────── */
+
+const _npcRaycaster = new THREE.Raycaster()
+const _npcRayOrigin = new THREE.Vector3()
+const _downDir = new THREE.Vector3(0, -1, 0)
+
+function getGroundY(x: number, z: number): number | null {
+  const scenes = testMapScene.current
+  if (!scenes.length) return null
+  _npcRayOrigin.set(x, 20, z)
+  _npcRaycaster.set(_npcRayOrigin, _downDir)
+  const hits = _npcRaycaster.intersectObjects(scenes, true)
+  return hits.length > 0 ? hits[0].point.y : null
+}
 
 /* ── Map activity → animation clip name + source file ────── */
 
@@ -35,12 +55,9 @@ const ACTIVITY_CLIPS: Record<
   bow: { file: 'CombatRanged', clip: 'Ranged_Bow_Aiming_Idle' },
 }
 
-/* ── Prop attachment (weapon/tool in hand) ─────────────────── */
+/* ── Prop attachment ─────────────────────────────────────── */
 
-function useAttachProp(
-  model: THREE.Object3D,
-  prop: NPCProp | undefined,
-) {
+function useAttachProp(model: THREE.Object3D, prop: NPCProp | undefined) {
   const propResult = useGLTF(prop?.model ?? '/models/character/Knight.glb')
 
   useEffect(() => {
@@ -52,32 +69,27 @@ function useAttachProp(
     })
     if (!found) return
     const bone = found as THREE.Object3D
-
     const propClone = propResult.scene.clone()
     propClone.scale.setScalar(prop.scale ?? 1)
     propClone.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        ;(child as THREE.Mesh).castShadow = true
-      }
+      if ((child as THREE.Mesh).isMesh)(child as THREE.Mesh).castShadow = true
     })
     bone.add(propClone)
-    return () => {
-      bone.remove(propClone)
-    }
+    return () => { bone.remove(propClone) }
   }, [model, prop, propResult.scene])
 }
 
 /* ── Speech bubble ───────────────────────────────────────── */
 
-function SpeechBubble({ npcId }: { npcId: string }) {
+function SpeechBubble({ npcId, visible }: { npcId: string; visible: boolean }) {
   const editorEnabled = useEditorStore((s) => s.enabled)
   const activeDialogue = useGameStore((s) => s.activeDialogue)
   const isInDialogue = activeDialogue?.npcId === npcId
 
-  if (editorEnabled || isInDialogue) return null
+  if (editorEnabled || isInDialogue || !visible) return null
 
   return (
-    <Html center position={[0, 2.2, 0]} distanceFactor={10} zIndexRange={[1, 0]}>
+    <Html center position={[0, 1.8, 0]} distanceFactor={10} zIndexRange={[1, 0]}>
       <div
         style={{
           background: 'rgba(255, 255, 255, 0.92)',
@@ -118,6 +130,9 @@ function NPC({ id, position, rotation, model: modelPath, activity = 'wander', pr
   const { animations: combatRangedAnims } = useGLTF('/models/character/anims/CombatRanged.glb')
   const { animations: moveAdvAnims } = useGLTF('/models/character/anims/MovementAdvanced.glb')
   const groupRef = useRef<THREE.Group>(null!)
+  const frameRef = useRef(0)
+  const groundSnapped = useRef(false)
+  const [bubbleVisible, setBubbleVisible] = useState(false)
 
   const model = useMemo(() => SkeletonUtils.clone(srcModel), [srcModel])
 
@@ -131,10 +146,8 @@ function NPC({ id, position, rotation, model: modelPath, activity = 'wander', pr
     })
   }, [model])
 
-  // Attach hand prop
   useAttachProp(model, prop)
 
-  // ── Collect all anim clips by source file ──
   const animsByFile = useMemo(
     () => ({
       MovementBasic: moveAnims,
@@ -151,7 +164,6 @@ function NPC({ id, position, rotation, model: modelPath, activity = 'wander', pr
   const findClip = (file: string, name: string) =>
     animsByFile[file as keyof typeof animsByFile]?.find((c) => c.name === name)
 
-  // Animation
   const mixerRef = useRef<THREE.AnimationMixer | null>(null)
   const actionsRef = useRef<Record<string, THREE.AnimationAction>>({})
   const wasInDialogue = useRef(false)
@@ -161,7 +173,6 @@ function NPC({ id, position, rotation, model: modelPath, activity = 'wander', pr
     mixerRef.current = mixer
     actionsRef.current = {}
 
-    // Always register idle (for dialogue fallback)
     const idleClip = findClip('General', 'Idle_A')
     if (idleClip) {
       const action = mixer.clipAction(idleClip)
@@ -169,18 +180,13 @@ function NPC({ id, position, rotation, model: modelPath, activity = 'wander', pr
     }
 
     if (activity === 'wander') {
-      // Wandering NPC: idle + run
       const runClip = findClip('MovementBasic', 'Running_A')
-      if (runClip) {
-        actionsRef.current['run'] = mixer.clipAction(runClip)
-      }
-      // Start idle with random offset
+      if (runClip) actionsRef.current['run'] = mixer.clipAction(runClip)
       if (actionsRef.current['idle']) {
         actionsRef.current['idle'].time = Math.random() * (idleClip?.duration ?? 1)
         actionsRef.current['idle'].play()
       }
     } else {
-      // Stationary NPC: play activity clip
       const info = ACTIVITY_CLIPS[activity]
       const activityClip = findClip(info.file, info.clip)
       if (activityClip) {
@@ -189,7 +195,6 @@ function NPC({ id, position, rotation, model: modelPath, activity = 'wander', pr
         actionsRef.current['activity'] = action
         action.play()
       } else if (actionsRef.current['idle']) {
-        // Fallback to idle if clip not found
         actionsRef.current['idle'].play()
       }
     }
@@ -200,7 +205,7 @@ function NPC({ id, position, rotation, model: modelPath, activity = 'wander', pr
     }
   }, [model, activity, animsByFile])
 
-  // Wander state (only used by wander NPCs)
+  // Wander state
   const stateRef = useRef<'idle' | 'walking'>('idle')
   const timerRef = useRef(Math.random() * (IDLE_MAX - IDLE_MIN) + IDLE_MIN)
   const targetRef = useRef(new THREE.Vector3(position[0], 0, position[2]))
@@ -210,19 +215,52 @@ function NPC({ id, position, rotation, model: modelPath, activity = 'wander', pr
   useFrame((_, delta) => {
     if (!groupRef.current) return
     const dt = Math.min(delta, 0.05)
-    mixerRef.current?.update(dt)
+    frameRef.current++
 
     const pos = groupRef.current.position
 
-    // Publish position for proximity detection
+    // Snap to terrain on first successful raycast
+    if (!groundSnapped.current) {
+      const gy = getGroundY(pos.x, pos.z)
+      if (gy !== null) {
+        pos.y = gy
+        groundSnapped.current = true
+      }
+    }
+
+    // Distance culling — check every 10 frames
+    if (frameRef.current % 10 === 0) {
+      const dx = pos.x - playerPosition.x
+      const dz = pos.z - playerPosition.z
+      const distSq = dx * dx + dz * dz
+      const shouldBeVisible = distSq < CULL_DIST_SQ
+      if (groupRef.current.visible !== shouldBeVisible) {
+        groupRef.current.visible = shouldBeVisible
+      }
+
+      // Bubble: show only if close and player is facing the NPC
+      if (shouldBeVisible && distSq < BUBBLE_DIST_SQ) {
+        const fwdX = Math.sin(playerRotation.y)
+        const fwdZ = Math.cos(playerRotation.y)
+        const dist = Math.sqrt(distSq)
+        const toNpcX = dx / dist
+        const toNpcZ = dz / dist
+        const dot = fwdX * toNpcX + fwdZ * toNpcZ
+        setBubbleVisible(dot > FACING_DOT)
+      } else {
+        setBubbleVisible(false)
+      }
+    }
+
+    if (!groupRef.current.visible) return
+
+    mixerRef.current?.update(dt)
     npcPositions[id] = { x: pos.x, z: pos.z }
 
-    // Check if in dialogue
     const activeDialogue = useGameStore.getState().activeDialogue
     const inDialogue = activeDialogue?.npcId === id
 
     if (inDialogue) {
-      // Face the player
       const dx = playerPosition.x - pos.x
       const dz = playerPosition.z - pos.z
       const targetRot = Math.atan2(dx, dz)
@@ -232,7 +270,6 @@ function NPC({ id, position, rotation, model: modelPath, activity = 'wander', pr
       currentRotRef.current += diff * Math.min(6 * dt, 1)
       groupRef.current.rotation.y = currentRotRef.current
 
-      // Switch to idle when entering dialogue
       if (!wasInDialogue.current) {
         const acts = actionsRef.current
         const playing = activity === 'wander' && stateRef.current === 'walking' ? 'run' : 'activity'
@@ -247,7 +284,6 @@ function NPC({ id, position, rotation, model: modelPath, activity = 'wander', pr
       return
     }
 
-    // Exiting dialogue — resume activity
     if (wasInDialogue.current) {
       wasInDialogue.current = false
       const acts = actionsRef.current
@@ -255,29 +291,38 @@ function NPC({ id, position, rotation, model: modelPath, activity = 'wander', pr
         timerRef.current = Math.random() * (IDLE_MAX - IDLE_MIN) + IDLE_MIN
         stateRef.current = 'idle'
       } else if (acts['activity'] && acts['idle']) {
-        // Resume activity animation
         acts['idle'].crossFadeTo(acts['activity'], 0.3, true)
         acts['activity'].enabled = true
         acts['activity'].play()
       }
     }
 
-    // Stationary NPCs don't need wander logic
     if (activity !== 'wander') return
 
     timerRef.current -= dt
 
     if (stateRef.current === 'idle') {
       if (timerRef.current <= 0) {
-        const angle = Math.random() * Math.PI * 2
-        const dist = Math.random() * WANDER_RADIUS
-        targetRef.current.set(
-          spawnRef.current.x + Math.cos(angle) * dist,
-          0,
-          spawnRef.current.z + Math.sin(angle) * dist,
-        )
-        stateRef.current = 'walking'
+        // Pick a valid wander target on land, min 3 units from shore
+        let found = false
+        for (let attempt = 0; attempt < 8; attempt++) {
+          const angle = Math.random() * Math.PI * 2
+          const dist = Math.random() * WANDER_RADIUS
+          const tx = spawnRef.current.x + Math.cos(angle) * dist
+          const tz = spawnRef.current.z + Math.sin(angle) * dist
+          if (isInsideLand(tx, tz) && distanceToShore(tx, tz) >= 3) {
+            targetRef.current.set(tx, 0, tz)
+            found = true
+            break
+          }
+        }
+        if (!found) {
+          // Stay idle a bit longer if no valid spot found
+          timerRef.current = IDLE_MIN
+          return
+        }
 
+        stateRef.current = 'walking'
         const acts = actionsRef.current
         if (acts['idle'] && acts['run']) {
           acts['idle'].crossFadeTo(acts['run'], 0.2, true)
@@ -293,7 +338,6 @@ function NPC({ id, position, rotation, model: modelPath, activity = 'wander', pr
       if (distToTarget < 0.15) {
         stateRef.current = 'idle'
         timerRef.current = Math.random() * (IDLE_MAX - IDLE_MIN) + IDLE_MIN
-
         const acts = actionsRef.current
         if (acts['run'] && acts['idle']) {
           acts['run'].crossFadeTo(acts['idle'], 0.2, true)
@@ -303,8 +347,27 @@ function NPC({ id, position, rotation, model: modelPath, activity = 'wander', pr
       } else {
         const nx = dx / distToTarget
         const nz = dz / distToTarget
-        pos.x += nx * WANDER_SPEED * dt
-        pos.z += nz * WANDER_SPEED * dt
+        const newX = pos.x + nx * WANDER_SPEED * dt
+        const newZ = pos.z + nz * WANDER_SPEED * dt
+
+        // Only move if still on land
+        if (isInsideLand(newX, newZ) && distanceToShore(newX, newZ) >= 2) {
+          pos.x = newX
+          pos.z = newZ
+          // Snap Y to terrain while moving
+          const gy = getGroundY(newX, newZ)
+          if (gy !== null) pos.y = gy
+        } else {
+          // Hit boundary — go idle
+          stateRef.current = 'idle'
+          timerRef.current = IDLE_MIN
+          const acts = actionsRef.current
+          if (acts['run'] && acts['idle']) {
+            acts['run'].crossFadeTo(acts['idle'], 0.2, true)
+            acts['idle'].enabled = true
+            acts['idle'].play()
+          }
+        }
 
         const targetRot = Math.atan2(nx, nz)
         let diff = targetRot - currentRotRef.current
@@ -318,8 +381,8 @@ function NPC({ id, position, rotation, model: modelPath, activity = 'wander', pr
 
   return (
     <group ref={groupRef} position={position} rotation={[0, rotation, 0]}>
-      <primitive object={model} scale={0.85} />
-      <SpeechBubble npcId={id} />
+      <primitive object={model} scale={0.57} />
+      <SpeechBubble npcId={id} visible={bubbleVisible} />
     </group>
   )
 }

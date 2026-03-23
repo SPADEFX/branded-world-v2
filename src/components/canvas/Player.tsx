@@ -6,7 +6,7 @@ import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { useInput } from '@/hooks/useInput'
 import { useGameStore } from '@/stores/gameStore'
-import { playerPosition, playerRotation, cameraInput, npcPositions } from '@/lib/playerRef'
+import { playerPosition, playerRotation, cameraInput, npcPositions, teleportTarget } from '@/lib/playerRef'
 import { testMapScene } from '@/lib/testMapRef'
 
 const MOVE_SPEED = 4
@@ -16,7 +16,7 @@ const ROTATION_SPEED = 12
 const JUMP_FORCE = 6
 const GRAVITY = 14
 const PLAYER_RADIUS = 0.3
-const STEP_HEIGHT = 0.5   // max step the player can climb
+const STEP_HEIGHT = 0.35   // max step the player can climb
 const WALL_CHECK_DIST = PLAYER_RADIUS + 0.05
 const DIALOGUE_STAND_DIST = 1.8
 const DIALOGUE_MOVE_SPEED = 4
@@ -34,11 +34,11 @@ const _wallDirs = [
 ]
 
 function getGroundHeight(px: number, py: number, pz: number): number {
-  const scene = testMapScene.current
-  if (!scene) return py
+  const scenes = testMapScene.current
+  if (!scenes.length) return py
   _rayOrigin.set(px, py + 10, pz)
   _downRaycaster.set(_rayOrigin, _downDir)
-  const hits = _downRaycaster.intersectObject(scene, true)
+  const hits = _downRaycaster.intersectObjects(scenes, true)
   for (const hit of hits) {
     if (hit.point.y <= py + STEP_HEIGHT) return hit.point.y
   }
@@ -47,18 +47,18 @@ function getGroundHeight(px: number, py: number, pz: number): number {
 
 /** Returns how much to push the player back per axis to avoid walls. */
 function resolveWalls(px: number, py: number, pz: number): { dx: number; dz: number } {
-  const scene = testMapScene.current
-  if (!scene) return { dx: 0, dz: 0 }
+  const scenes = testMapScene.current
+  if (!scenes.length) return { dx: 0, dz: 0 }
 
   let dx = 0
   let dz = 0
-  // Cast from chest height (py + 0.8) to avoid floor hits
-  _rayOrigin.set(px, py + 0.8, pz)
+  // Cast from above step height to avoid treating stair risers as walls
+  _rayOrigin.set(px, py + STEP_HEIGHT + 0.3, pz)
 
   for (const dir of _wallDirs) {
     _wallRaycaster.set(_rayOrigin, dir)
     _wallRaycaster.far = WALL_CHECK_DIST
-    const hits = _wallRaycaster.intersectObject(scene, true)
+    const hits = _wallRaycaster.intersectObjects(scenes, true)
     if (hits.length > 0) {
       const pen = WALL_CHECK_DIST - hits[0].distance
       dx -= dir.x * pen
@@ -78,6 +78,7 @@ export function Player() {
   const isMovingRef = useRef(false)
   const isJumpingRef = useRef(false)
   const verticalVelocity = useRef(0)
+  const smoothGroundH = useRef<number | null>(null)
   const keys = useInput()
 
   const { scene: model } = useGLTF('/models/character/Knight.glb')
@@ -129,6 +130,17 @@ export function Player() {
     if (!groupRef.current) return
     const dt = Math.min(delta, 0.05)
     mixerRef.current?.update(dt)
+
+    // Teleport from editor
+    if (teleportTarget.current) {
+      const t = teleportTarget.current
+      teleportTarget.current = null
+      groupRef.current.position.set(t.x, t.y, t.z)
+      velocityRef.current.set(0, 0)
+      verticalVelocity.current = 0
+      smoothGroundH.current = t.y
+      playerPosition.x = t.x; playerPosition.y = t.y; playerPosition.z = t.z
+    }
 
     const state = useGameStore.getState()
     const { joystickInput, activeModal, activeDialogue, nearbyZone, nearbyNPC, showOnboarding } = state
@@ -213,7 +225,22 @@ export function Player() {
 
     // ── Snap to ground / gravity ──
     if (onGround && verticalVelocity.current <= 0) {
-      pos.y = groundH
+      // Low-pass filter ground height: damps tiny pavé bumps, tracks stairs.
+      // Going up: lerp at 12 (fast enough for stairs, damps sub-5cm variations).
+      // Going down: snap instantly.
+      if (smoothGroundH.current === null) smoothGroundH.current = groundH
+      const gap = groundH - smoothGroundH.current
+      if (gap > 0.05) {
+        // Real stair riser (≥5 cm) — track fast so player doesn't sink
+        smoothGroundH.current = THREE.MathUtils.lerp(smoothGroundH.current, groundH, Math.min(20 * dt, 1))
+      } else if (gap > -0.05) {
+        // Small variation ±5 cm (pavé, gentle slope) — slow lerp damps bobbing
+        smoothGroundH.current = THREE.MathUtils.lerp(smoothGroundH.current, groundH, Math.min(5 * dt, 1))
+      } else {
+        // Large drop (ledge edge) — snap immediately
+        smoothGroundH.current = groundH
+      }
+      pos.y = smoothGroundH.current
       verticalVelocity.current = 0
       if (isJumpingRef.current) {
         isJumpingRef.current = false
@@ -239,6 +266,7 @@ export function Player() {
     prevJump.current = jumpPressed
 
     if (!onGround || verticalVelocity.current > 0) {
+      smoothGroundH.current = null
       verticalVelocity.current -= GRAVITY * dt
       pos.y += verticalVelocity.current * dt
       if (groundH > -Infinity && pos.y < groundH) {

@@ -1,7 +1,7 @@
 import type { NPCConfig } from '@/types'
 
 export const NPC_LIST: NPCConfig[] = [
-  // ── Village NPCs (center area, radius < 18) ───────────────
+  // ── Village NPCs ─────────────────────────────────────────
 
   {
     id: 'npc-marco',
@@ -58,22 +58,8 @@ export const NPC_LIST: NPCConfig[] = [
       "The community is our greatest superpower!",
     ],
   },
-  {
-    id: 'npc-solaris',
-    name: 'Solaris',
-    position: [-8, 0, 10],
-    rotation: 0,
-    model: '/models/character/Paladin.glb',
-    activity: 'wander',
-    prop: { model: '/models/props/weapons/hammer_B.gltf', slot: 'right' },
-    dialogue: [
-      'Blessings upon you, traveler.',
-      'I wander this island spreading hope and light.',
-      'Remember: every token holder is part of something greater.',
-    ],
-  },
 
-  // ── East / Product zone NPCs ────────────────────────────────
+  // ── East zone ────────────────────────────────────────────
 
   {
     id: 'npc-aria',
@@ -117,7 +103,7 @@ export const NPC_LIST: NPCConfig[] = [
     ],
   },
 
-  // ── West / CTA zone NPCs ─────────────────────────────────
+  // ── West zone ────────────────────────────────────────────
 
   {
     id: 'npc-elena',
@@ -147,21 +133,8 @@ export const NPC_LIST: NPCConfig[] = [
       "This community is worth fighting for.",
     ],
   },
-  {
-    id: 'npc-jester',
-    name: 'Jester',
-    position: [-16, 0, 14],
-    rotation: Math.PI / 6,
-    model: '/models/character/Clown.glb',
-    activity: 'cheer',
-    dialogue: [
-      "Honk honk! Welcome to the fun zone!",
-      "Why did the blockchain go to therapy? Too many issues!",
-      "Ha ha ha! Stick around, the party's just getting started!",
-    ],
-  },
 
-  // ── North / How-it-works + Community zone NPCs ────────────
+  // ── North zone ───────────────────────────────────────────
 
   {
     id: 'npc-sam',
@@ -175,19 +148,6 @@ export const NPC_LIST: NPCConfig[] = [
       'Hey there, adventurer!',
       "The fishing is great around here. Want to try?",
       'The view from the edges is something else. Go take a look!',
-    ],
-  },
-  {
-    id: 'npc-nova',
-    name: 'Nova',
-    position: [16, 0, -22],
-    rotation: Math.PI / 3,
-    model: '/models/character/SpaceRanger.glb',
-    activity: 'idle',
-    dialogue: [
-      'Greetings, earthling! I come from the Solana galaxy.',
-      'My scanners detect great potential in this world.',
-      'The future is decentralized — remember that!',
     ],
   },
   {
@@ -218,36 +178,8 @@ export const NPC_LIST: NPCConfig[] = [
     ],
   },
 
-  // ── Forest zone NPCs (ring 18-35) ─────────────────────────
+  // ── Beach zone ───────────────────────────────────────────
 
-  {
-    id: 'npc-shadow',
-    name: 'Shadow',
-    position: [-28, 0, -14],
-    rotation: Math.PI / 2,
-    model: '/models/character/Ninja.glb',
-    activity: 'sneak',
-    prop: { model: '/models/props/weapons/dagger_A.gltf', slot: 'right' },
-    dialogue: [
-      "You found me... impressive.",
-      "There are secrets hidden all across this island.",
-      "Collect the gems and you'll unlock something special...",
-    ],
-  },
-  {
-    id: 'npc-morgana',
-    name: 'Morgana',
-    position: [-30, 0, -6],
-    rotation: 0,
-    model: '/models/character/Witch.glb',
-    activity: 'magic',
-    prop: { model: '/models/props/weapons/wand_A.gltf', slot: 'right' },
-    dialogue: [
-      'Ah, a visitor! How delightful...',
-      "I've been brewing something powerful here.",
-      "The magic of this island grows stronger every day.",
-    ],
-  },
   {
     id: 'npc-darkblade',
     name: 'Darkblade',
@@ -262,9 +194,6 @@ export const NPC_LIST: NPCConfig[] = [
       "Only the worthy may enter... but you seem alright.",
     ],
   },
-
-  // ── Beach / Harbor NPCs (south/SE) ────────────────────────
-
   {
     id: 'npc-grug',
     name: 'Grug',
@@ -277,47 +206,6 @@ export const NPC_LIST: NPCConfig[] = [
       'Grug like this place!',
       'Grug find shiny rocks near water.',
       'You find shiny rocks too? Grug happy!',
-    ],
-  },
-  {
-    id: 'npc-vlad',
-    name: 'Vlad',
-    position: [25, 0, 30],
-    rotation: -Math.PI,
-    model: '/models/character/Vampire.glb',
-    activity: 'idle',
-    dialogue: [
-      "Good evening... don't be frightened.",
-      "I've been here for... a very long time.",
-      'The moonlight over the ocean is exquisite, is it not?',
-    ],
-  },
-  {
-    id: 'npc-rex',
-    name: 'Rex',
-    position: [35, 0, 25],
-    rotation: -Math.PI / 2,
-    model: '/models/character/Survivalist.glb',
-    activity: 'idle',
-    prop: { model: '/models/props/tools/torch.gltf', slot: 'left' },
-    dialogue: [
-      "You need to be prepared for anything out here.",
-      "I've set up a small camp — feel free to rest.",
-      "The island looks peaceful, but stay sharp!",
-    ],
-  },
-  {
-    id: 'npc-ace',
-    name: 'Ace',
-    position: [14, 0, 32],
-    rotation: -Math.PI,
-    model: '/models/character/ActionFigure.glb',
-    activity: 'combat',
-    prop: { model: '/models/props/weapons/shield_A.gltf', slot: 'left' },
-    dialogue: [
-      'Ready for action? I was BORN for action!',
-      "I've been training non-stop since I got here.",
-      "Let's make this the greatest island in the metaverse!",
     ],
   },
 ]
