@@ -16,7 +16,6 @@ import { useGLTF } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { SolanaMonument } from "./SolanaMonument";
 
 /* ── Preload ─────────────────────────────────────────────── */
 
@@ -692,8 +691,6 @@ function CenterPlaza() {
         <ringGeometry args={[3.7, 4, 32]} />
         <meshStandardMaterial color="#a8a29e" />
       </mesh>
-      {/* Solana monument */}
-      <SolanaMonument />
       {/* Flag next to monument */}
       <Tex
         model="/models/pirate/flag-pirate.glb"
