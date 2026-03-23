@@ -43,19 +43,19 @@ interface GraphicsState {
 export const useGraphicsStore = create<GraphicsState>((set) => ({
   shadows: true,
   shadowMapSize: 512,
-  shadowIntensity: 1.5,
+  shadowIntensity: 0.8,
 
   bloom: true,
-  bloomIntensity: 0.4,
-  saturation: 0.3,
+  bloomIntensity: 0.5,
+  saturation: 0.4,
   godRays: false,
   godRaysWeight: 0.25,
 
   fogEnabled: true,
   fogDensity: 0.010,
 
-  ambientIntensity: 1.2,
-  directionalIntensity: 1.6,
+  ambientIntensity: 0.75,
+  directionalIntensity: 2.0,
 
   dashboardOpen: false,
 

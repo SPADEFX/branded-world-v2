@@ -3,7 +3,6 @@
 import { Suspense, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import * as THREE from 'three'
-import { World } from './World'
 import { Player } from './Player'
 import { CameraRig } from './CameraRig'
 import { InteractionZones } from './InteractionZones'
@@ -12,21 +11,19 @@ import { NPCs } from './NPCs'
 import { FootstepDust } from './FootstepDust'
 import { EditorGizmo } from './EditorGizmo'
 import { DynamicObjects } from './DynamicObjects'
-import { PlacementPlane } from './PlacementPlane'
 import { EditorCamera } from './EditorCamera'
 import { HitboxVisuals } from './HitboxVisuals'
 import { Collectibles } from './Collectibles'
 import { SeasonalDecorations } from './SeasonalDecorations'
-import { TestMap } from './TestMap'
+import { Environment } from './Environment'
+import { DistanceCuller } from './DistanceCuller'
 import { FPSTracker } from './FPSTracker'
-import { EffectComposer, Bloom, HueSaturation, BrightnessContrast, GodRays } from '@react-three/postprocessing'
-import { BlendFunction } from 'postprocessing'
+import { EffectComposer, Bloom, HueSaturation, BrightnessContrast } from '@react-three/postprocessing'
 import { useGraphicsStore } from '@/stores/graphicsStore'
 
-// Isolated component so store subscriptions never re-render the game objects
 function PostProcessing() {
   const [sun, setSun] = useState<THREE.Mesh | null>(null)
-  const { bloom, bloomIntensity, saturation, godRays, godRaysWeight } = useGraphicsStore()
+  const { bloom, bloomIntensity, saturation } = useGraphicsStore()
 
   return (
     <>
@@ -38,7 +35,7 @@ function PostProcessing() {
       <EffectComposer>
         <Bloom intensity={bloom ? bloomIntensity : 0} luminanceThreshold={0.8} luminanceSmoothing={0.9} />
         <HueSaturation saturation={saturation} />
-        <BrightnessContrast brightness={0.05} contrast={0.15} />
+        <BrightnessContrast brightness={0.0} contrast={0.25} />
       </EffectComposer>
     </>
   )
@@ -48,18 +45,17 @@ function SceneContents() {
   return (
     <>
       <Lighting />
-      {/* <World /> */}
       <Player />
       <InteractionZones />
       <NPCs />
       <Collectibles />
       <SeasonalDecorations />
-      <TestMap />
+      <Environment />
+      <DistanceCuller />
       <FootstepDust />
       <CameraRig />
       <EditorGizmo />
       <DynamicObjects />
-      <PlacementPlane />
       <HitboxVisuals />
       <EditorCamera />
       <PostProcessing />
@@ -75,7 +71,7 @@ export function Experience() {
       gl={{
         antialias: true,
         toneMapping: THREE.ACESFilmicToneMapping,
-        toneMappingExposure: 1.8,
+        toneMappingExposure: 1.4,
         powerPreference: 'high-performance',
       }}
       dpr={Math.min(window.devicePixelRatio, 1.5)}

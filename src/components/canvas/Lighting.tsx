@@ -11,12 +11,23 @@ export function Lighting() {
   const { fogEnabled, fogDensity, ambientIntensity, directionalIntensity, shadows, shadowMapSize, shadowIntensity } = useGraphicsStore()
 
   useEffect(() => {
+    scene.background = new THREE.Color('#b8cce0')
     if (fogEnabled) {
       scene.fog = new THREE.FogExp2('#b8cce0', fogDensity)
     } else {
       scene.fog = null
     }
   }, [scene, fogEnabled, fogDensity])
+
+  // Dispose shadow map when size changes so Three.js recreates it at the new resolution
+  useEffect(() => {
+    const light = lightRef.current
+    if (!light) return
+    if (light.shadow.map) {
+      light.shadow.map.dispose()
+      light.shadow.map = null as any
+    }
+  }, [shadowMapSize])
 
   return (
     <>

@@ -22,7 +22,6 @@ interface EditorState {
   selectedId: string | null
   mode: 'translate' | 'rotate'
   dragging: boolean
-  placingModel: string | null
   eraserMode: boolean
   cameraMode: 'follow' | 'top' | 'free'
   objects: Record<string, EditorObject>
@@ -33,7 +32,6 @@ interface EditorState {
   select: (id: string | null) => void
   setMode: (mode: 'translate' | 'rotate') => void
   setDragging: (d: boolean) => void
-  setPlacingModel: (path: string | null) => void
   setEraserMode: (mode: boolean) => void
   setCameraMode: (mode: 'follow' | 'top' | 'free') => void
   register: (obj: EditorObject) => void
@@ -65,7 +63,6 @@ export const useEditorStore = create<EditorState>((set) => ({
   selectedId: null,
   mode: 'translate',
   dragging: false,
-  placingModel: null,
   eraserMode: false,
   cameraMode: 'follow',
   objects: {},
@@ -76,16 +73,13 @@ export const useEditorStore = create<EditorState>((set) => ({
     set((s) => ({
       enabled: !s.enabled,
       selectedId: null,
-      placingModel: null,
       eraserMode: false,
     })),
   select: (id) => set({ selectedId: id }),
   setMode: (mode) => set({ mode }),
   setDragging: (dragging) => set({ dragging }),
-  setPlacingModel: (path) =>
-    set({ placingModel: path, selectedId: null, eraserMode: false }),
   setEraserMode: (mode) =>
-    set({ eraserMode: mode, placingModel: null, selectedId: null }),
+    set({ eraserMode: mode, selectedId: null }),
   setCameraMode: (cameraMode) => set({ cameraMode }),
   register: (obj) =>
     set((s) => ({

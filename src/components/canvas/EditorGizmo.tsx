@@ -65,8 +65,7 @@ export function EditorGizmo() {
         return
       }
       if (e.key === 'Escape') {
-        if (state.placingModel) state.setPlacingModel(null)
-        else if (state.eraserMode) state.setEraserMode(false)
+        if (state.eraserMode) state.setEraserMode(false)
         else state.select(null)
       }
       if (e.key === 'g') state.setMode('translate')

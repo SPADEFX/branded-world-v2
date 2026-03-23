@@ -35,7 +35,7 @@ const _wallDirs = [
 
 function getGroundHeight(px: number, py: number, pz: number): number {
   const scene = testMapScene.current
-  if (!scene) return 0
+  if (!scene) return py
   _rayOrigin.set(px, py + 10, pz)
   _downRaycaster.set(_rayOrigin, _downDir)
   const hits = _downRaycaster.intersectObject(scene, true)

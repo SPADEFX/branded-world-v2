@@ -239,7 +239,7 @@ export function GraphicsDashboard() {
           <Section title="Shadows">
             <Toggle label="Enable shadows" value={store.shadows} onChange={(v) => set({ shadows: v })} />
             <Select label="Shadow map" value={store.shadowMapSize} options={[512, 1024, 2048]} onChange={(v) => set({ shadowMapSize: v as 512 | 1024 | 2048 })} />
-            <Slider label="Intensity" value={store.shadowIntensity} min={0} max={3} step={0.1} onChange={(v) => set({ shadowIntensity: v })} />
+            <Slider label="Intensity" value={store.shadowIntensity} min={0} max={1} step={0.05} onChange={(v) => set({ shadowIntensity: v })} />
           </Section>
 
           <Section title="Post-processing">

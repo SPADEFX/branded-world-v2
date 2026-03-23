@@ -1,6 +1,6 @@
 'use client'
 
-import { OrthographicCamera, OrbitControls } from '@react-three/drei'
+import { OrthographicCamera, PerspectiveCamera, OrbitControls } from '@react-three/drei'
 import { useEditorStore } from '@/stores/editorStore'
 
 /** Orthographic top-down — scroll to zoom, right-drag to pan */
@@ -30,16 +30,19 @@ function TopDownView({ dragging }: { dragging: boolean }) {
 /** Free orbit — full orbit/pan/zoom like Blender */
 function FreeOrbitView({ dragging }: { dragging: boolean }) {
   return (
-    <OrbitControls
-      enabled={!dragging}
-      enablePan={true}
-      enableZoom={true}
-      enableRotate={true}
-      target={[0, 0, 0]}
-      maxPolarAngle={Math.PI / 2.05}
-      minDistance={3}
-      maxDistance={60}
-    />
+    <>
+      <PerspectiveCamera makeDefault fov={45} near={0.1} far={2000} />
+      <OrbitControls
+        enabled={!dragging}
+        enablePan={true}
+        enableZoom={true}
+        enableRotate={true}
+        target={[0, 0, 0]}
+        maxPolarAngle={Math.PI / 2.05}
+        minDistance={3}
+        maxDistance={300}
+      />
+    </>
   )
 }
 

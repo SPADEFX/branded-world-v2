@@ -4,9 +4,10 @@ import { useRef, useMemo, useEffect, useState } from 'react'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { useEditorStore, editorRefs } from '@/stores/editorStore'
-import { needsTexture, getColormapPath } from '@/config/modelCatalog'
 import { registerModelHitboxes, unregisterModelHitboxes } from '@/lib/hitboxes'
 import type { EditorObject } from '@/stores/editorStore'
+
+const TEXTURED_CATEGORIES = ['pirate', 'watercraft', 'graveyard', 'survival']
 
 /* ── Shared colormap textures ─────────────────────────────── */
 
@@ -14,7 +15,7 @@ const textureCache: Record<string, THREE.Texture> = {}
 
 function getCachedTexture(category: string): THREE.Texture {
   if (!textureCache[category]) {
-    const tex = new THREE.TextureLoader().load(getColormapPath(category))
+    const tex = new THREE.TextureLoader().load(`/models/${category}/Textures/colormap.png`)
     tex.flipY = false
     tex.colorSpace = THREE.SRGBColorSpace
     textureCache[category] = tex
@@ -34,7 +35,7 @@ const outlineMat = new THREE.MeshBasicMaterial({
 function DynamicObject({ obj }: { obj: EditorObject }) {
   const { scene } = useGLTF(obj.model)
   const groupRef = useRef<THREE.Group>(null!)
-  const useTex = needsTexture(obj.category)
+  const useTex = TEXTURED_CATEGORIES.includes(obj.category)
   const eraserMode = useEditorStore((s) => s.eraserMode)
   const hitboxVersion = useEditorStore((s) => s.hitboxVersion)
   const [hovered, setHovered] = useState(false)
