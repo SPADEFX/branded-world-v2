@@ -45,6 +45,14 @@ interface EditorState {
   doorViewStyle: 'xray' | 'full' | 'wireframe'
   freeCamActive: boolean
   setFreeCamActive: (v: boolean) => void
+  cullingDebug: boolean
+  setCullingDebug: (v: boolean) => void
+  collisionManagerOpen: boolean
+  setCollisionManagerOpen: (v: boolean) => void
+  propViewerOpen: boolean
+  propViewerIndex: number
+  setPropViewerOpen: (v: boolean) => void
+  setPropViewerIndex: (v: number) => void
   setViewDoorsMode: (mode: boolean) => void
   setDoorTransformMode: (mode: 'grab' | 'rotate' | 'scale' | null) => void
   setDoorViewStyle: (style: 'xray' | 'full' | 'wireframe') => void
@@ -90,6 +98,10 @@ export const useEditorStore = create<EditorState>((set) => ({
   placeDoorMode: false,
   viewDoorsMode: false,
   freeCamActive: false,
+  cullingDebug: false,
+  collisionManagerOpen: false,
+  propViewerOpen: false,
+  propViewerIndex: 0,
   placedDoors: loadSavedDoors(),
   selectedDoorId: null,
   doorTransformMode: null,
@@ -116,6 +128,10 @@ export const useEditorStore = create<EditorState>((set) => ({
   setPlaceDoorMode: (mode) =>
     set({ placeDoorMode: mode, selectedId: null }),
   setFreeCamActive: (v) => set({ freeCamActive: v }),
+  setCullingDebug: (v) => set({ cullingDebug: v }),
+  setCollisionManagerOpen: (v) => set({ collisionManagerOpen: v }),
+  setPropViewerOpen: (v) => set({ propViewerOpen: v }),
+  setPropViewerIndex: (v) => set({ propViewerIndex: v }),
   setViewDoorsMode: (mode) =>
     set({ viewDoorsMode: mode, ...(mode ? { cameraMode: 'free' } : {}) }),
   setDoorTransformMode: (mode) => set({ doorTransformMode: mode }),

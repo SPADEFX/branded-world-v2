@@ -21,6 +21,8 @@ import { DoorTriggers } from './DoorTriggers'
 import { DoorPlacer } from './DoorPlacer'
 import { DoorViewer } from './DoorViewer'
 import { FPSTracker } from './FPSTracker'
+import { CullingDebugVisualizer } from './CullingDebugVisualizer'
+import { PropViewerHighlight } from './PropViewerHighlight'
 import { EffectComposer, Bloom, HueSaturation, BrightnessContrast } from '@react-three/postprocessing'
 import { Preload } from '@react-three/drei'
 import { useGraphicsStore } from '@/stores/graphicsStore'
@@ -67,6 +69,8 @@ function SceneContents() {
       <DoorViewer />
       <PostProcessing />
       <FPSTracker />
+      <CullingDebugVisualizer />
+      <PropViewerHighlight />
     </>
   )
 }

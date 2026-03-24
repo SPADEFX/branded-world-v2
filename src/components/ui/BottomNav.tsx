@@ -13,9 +13,18 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   {
+    id: 'collision',
+    icon: '🎯',
+    label: 'Collision',
+  },
+  {
     id: 'camera',
     icon: '🎥',
     label: 'Caméra libre',
+    sub: [
+      { id: 'activate', icon: '📷', label: 'Activer' },
+      { id: 'culling', icon: '🔵', label: 'Culling' },
+    ],
   },
   {
     id: 'doors',
@@ -76,6 +85,11 @@ export function BottomNav() {
 
   const freeCamActive = useEditorStore((s) => s.freeCamActive)
   const setFreeCamActive = useEditorStore((s) => s.setFreeCamActive)
+  const cullingDebug = useEditorStore((s) => s.cullingDebug)
+  const setCullingDebug = useEditorStore((s) => s.setCullingDebug)
+  const propViewerOpen = useEditorStore((s) => s.propViewerOpen)
+  const setPropViewerOpen = useEditorStore((s) => s.setPropViewerOpen)
+  const setPropViewerIndex = useEditorStore((s) => s.setPropViewerIndex)
   const placeDoorMode = useEditorStore((s) => s.placeDoorMode)
   const setPlaceDoorMode = useEditorStore((s) => s.setPlaceDoorMode)
   const viewDoorsMode = useEditorStore((s) => s.viewDoorsMode)
@@ -84,17 +98,31 @@ export function BottomNav() {
   const doorsActive = placeDoorMode || viewDoorsMode
 
   function handleMain(id: string) {
-    if (id === 'camera') {
-      if (document.pointerLockElement) document.exitPointerLock()
-      setFreeCamActive(!freeCamActive)
+    if (id === 'collision') {
+      const next = !propViewerOpen
+      setPropViewerOpen(next)
+      if (next) {
+        setPropViewerIndex(0)
+        if (document.pointerLockElement) document.exitPointerLock()
+        setFreeCamActive(true)
+      }
       setOpenSub(null)
+    } else if (id === 'camera') {
+      setOpenSub(openSub === 'camera' ? null : 'camera')
     } else if (id === 'doors') {
       setOpenSub(openSub === 'doors' ? null : 'doors')
     }
   }
 
   function handleSub(parentId: string, subId: string) {
-    if (parentId === 'doors') {
+    if (parentId === 'camera') {
+      if (subId === 'activate') {
+        if (document.pointerLockElement) document.exitPointerLock()
+        setFreeCamActive(!freeCamActive)
+      } else if (subId === 'culling') {
+        setCullingDebug(!cullingDebug)
+      }
+    } else if (parentId === 'doors') {
       if (subId === 'place') {
         const next = !placeDoorMode
         setPlaceDoorMode(next)
@@ -110,7 +138,8 @@ export function BottomNav() {
   }
 
   function isActive(id: string) {
-    if (id === 'camera') return freeCamActive
+    if (id === 'collision') return propViewerOpen
+    if (id === 'camera') return freeCamActive || cullingDebug
     if (id === 'doors') return doorsActive
     return false
   }
@@ -139,6 +168,8 @@ export function BottomNav() {
           >
             {NAV_ITEMS.find((i) => i.id === openSub)?.sub?.map((sub) => {
               const isSubActive =
+                (openSub === 'camera' && sub.id === 'activate' && freeCamActive) ||
+                (openSub === 'camera' && sub.id === 'culling' && cullingDebug) ||
                 (openSub === 'doors' && sub.id === 'place' && placeDoorMode) ||
                 (openSub === 'doors' && sub.id === 'view' && viewDoorsMode)
               return (

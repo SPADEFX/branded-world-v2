@@ -3,11 +3,12 @@
 import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
 import * as THREE from 'three'
-import { visualMeshes, setDressMeshes } from '@/lib/testMapRef'
+import { visualMeshes, setDressMeshes, detailMiscMeshes } from '@/lib/testMapRef'
 import { playerPosition } from '@/lib/playerRef'
 
 const CULL_DIST_SQ = 200 * 200
 const SETDRESS_DIST_SQ = 15 * 15
+const DETAILMISC_DIST_SQ = 30 * 30
 const CHECK_INTERVAL = 10
 
 const _playerVec = new THREE.Vector3()
@@ -31,6 +32,12 @@ export function DistanceCuller() {
       mesh.getWorldPosition(_meshVec)
       mesh.visible = _playerVec.distanceToSquared(_meshVec) < SETDRESS_DIST_SQ
     }
+
+    for (const mesh of detailMiscMeshes.current) {
+      mesh.getWorldPosition(_meshVec)
+      mesh.visible = _playerVec.distanceToSquared(_meshVec) < DETAILMISC_DIST_SQ
+    }
+
   })
 
   return null

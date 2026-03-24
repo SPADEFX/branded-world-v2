@@ -23,6 +23,12 @@ export function autoInstance(scene: THREE.Object3D): THREE.Mesh[] {
     groups.get(key)!.push(m)
   }
 
+  // Compute scene's inverse world matrix so instance matrices are expressed
+  // relative to the scene root — avoids double-applying any root transform.
+  scene.updateWorldMatrix(true, false)
+  const sceneInv = new THREE.Matrix4().copy(scene.matrixWorld).invert()
+  const relMatrix = new THREE.Matrix4()
+
   let instanced = 0, singletons = 0
   const remaining: THREE.Mesh[] = []
   for (const [, group] of groups) {
@@ -43,13 +49,15 @@ export function autoInstance(scene: THREE.Object3D): THREE.Mesh[] {
       mat.needsUpdate = true
     }
     const inst = new THREE.InstancedMesh(first.geometry, mat, group.length)
+    inst.name = first.name  // preserve for collision lookups
     inst.castShadow = first.castShadow
     inst.receiveShadow = first.receiveShadow
     inst.frustumCulled = true
 
     for (let i = 0; i < group.length; i++) {
       group[i].updateWorldMatrix(true, false)
-      inst.setMatrixAt(i, group[i].matrixWorld)
+      relMatrix.multiplyMatrices(sceneInv, group[i].matrixWorld)
+      inst.setMatrixAt(i, relMatrix)
       group[i].parent?.remove(group[i])
     }
     inst.instanceMatrix.needsUpdate = true

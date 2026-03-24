@@ -5,6 +5,7 @@ import { useThree, useFrame } from '@react-three/fiber'
 import { OrthographicCamera, PerspectiveCamera, OrbitControls } from '@react-three/drei'
 import { useEditorStore } from '@/stores/editorStore'
 import { freeCameraJumpTarget, playerPosition } from '@/lib/playerRef'
+import { propViewerCameraAnim, currentEditorCam } from '@/lib/propViewerRef'
 
 /** Orthographic top-down — scroll to zoom, right-drag to pan */
 function TopDownView({ dragging }: { dragging: boolean }) {
@@ -36,6 +37,37 @@ function FreeOrbitView({ dragging }: { dragging: boolean }) {
   const { camera } = useThree()
 
   useFrame(() => {
+    // Track camera state for prop viewer
+    currentEditorCam.px = camera.position.x
+    currentEditorCam.py = camera.position.y
+    currentEditorCam.pz = camera.position.z
+    if (controlsRef.current) {
+      currentEditorCam.tx = controlsRef.current.target.x
+      currentEditorCam.ty = controlsRef.current.target.y
+      currentEditorCam.tz = controlsRef.current.target.z
+    }
+
+    // Smooth Bezier camera animation (prop viewer navigation)
+    const anim = propViewerCameraAnim.current
+    if (anim && controlsRef.current) {
+      const t = Math.min((performance.now() - anim.startTime) / anim.duration, 1)
+      const ease = t * t * (3 - 2 * t)  // smoothstep — slow start, fast middle, slow end
+      camera.position.set(
+        anim.startPx + (anim.endPx - anim.startPx) * ease,
+        anim.startPy + (anim.endPy - anim.startPy) * ease,
+        anim.startPz + (anim.endPz - anim.startPz) * ease,
+      )
+      controlsRef.current.target.set(
+        anim.startTx + (anim.endTx - anim.startTx) * ease,
+        anim.startTy + (anim.endTy - anim.startTy) * ease,
+        anim.startTz + (anim.endTz - anim.startTz) * ease,
+      )
+      controlsRef.current.update()
+      if (t >= 1) propViewerCameraAnim.current = null
+      return
+    }
+
+    // Instant jump (doors sidebar etc.)
     const jt = freeCameraJumpTarget.current
     if (!jt || !controlsRef.current) return
     freeCameraJumpTarget.current = null

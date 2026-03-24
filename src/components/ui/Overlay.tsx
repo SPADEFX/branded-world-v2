@@ -10,6 +10,7 @@ import { AmbientMusic } from './AmbientMusic'
 import { EditorSidebar } from './EditorSidebar'
 import { BottomNav } from './BottomNav'
 import { DoorsSidebar } from './DoorsSidebar'
+import { PropViewerHUD } from './PropViewerHUD'
 
 export function Overlay() {
   const [isMobile, setIsMobile] = useState(false)
@@ -28,6 +29,7 @@ export function Overlay() {
       <EditorSidebar />
       <DoorsSidebar />
       <BottomNav />
+      <PropViewerHUD />
       {isMobile && <MobileControls />}
     </div>
   )

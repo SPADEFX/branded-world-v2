@@ -32,7 +32,9 @@ src/
 │   │   ├── Player.tsx      # Player controller (WASD + gamepad + touch + ground raycasting)
 │   │   ├── NPCs.tsx        # NPC system with animations + hand props
 │   │   ├── CameraRig.tsx   # Third-person follow + pointer-lock mouse mode + obstruction fade
-│   │   ├── DistanceCuller.tsx # Dual-threshold culling: 200u (visualMeshes) / 15u (setDressMeshes)
+│   │   ├── DistanceCuller.tsx # Triple-threshold culling: 200u (visualMeshes) / 30u (detailMiscMeshes) / 15u (setDressMeshes)
+│   │   ├── CullingDebugVisualizer.tsx # 3D wireframe hemispheres showing culling radii (toggled from BottomNav)
+│   │   ├── PropViewerHighlight.tsx # In-world prop viewer: yellow pulsing highlight + Bezier camera flyTo
 │   │   ├── TeleportGhost.tsx  # Editor TP mode — wireframe ghost + click to teleport
 │   │   ├── InteractionZones.tsx # Proximity-triggered UI zones
 │   │   ├── SeasonalDecorations.tsx # Halloween/Christmas auto-switch
@@ -47,7 +49,8 @@ src/
 │       ├── Modal.tsx       # Zone content modals
 │       ├── DialogueBox.tsx # NPC dialogue system
 │       ├── HUD.tsx         # Discovery counter + interaction prompt
-│       ├── BottomNav.tsx   # Bottom navbar: Caméra libre / Portes (fantasy dark style)
+│       ├── BottomNav.tsx   # Bottom navbar: Collision / Caméra libre / Portes (fantasy dark style)
+│       ├── PropViewerHUD.tsx # Prop viewer HUD: nav arrows ◀◀◀▶▶▶, size badge, collision toggle
 │       ├── DoorsSidebar.tsx # Doors panel — list, view style, place/export
 │       ├── GraphicsDashboard.tsx # Graphics settings: bloom, shadows, camera mode
 │       ├── EditorSidebar.tsx # Editor panel (Move/Rotate/Eraser/TP/Save)
@@ -62,15 +65,18 @@ src/
 ├── lib/
 │   ├── worldShape.ts       # Continent polygon, point-in-polygon, biome detection
 │   ├── hitboxes.ts         # AABB collision system
-│   ├── testMapRef.ts       # testMapScene, visualMeshes, fadeScenesRef, buildingScenesRef, setDressMeshes
+│   ├── testMapRef.ts       # testMapScene, visualMeshes, fadeScenesRef, buildingScenesRef, setDressMeshes, detailMiscMeshes, propRegistry
+│   ├── propViewerRef.ts    # propViewerCameraAnim, currentEditorCam, propViewerFlyTo (shared refs for prop viewer)
+│   ├── thumbnailRenderer.ts # Offscreen Three.js renderer for prop thumbnails (renderObjectThumbnail)
 │   ├── playerRef.ts        # playerPosition, playerRotation, teleportTarget, freeCameraJumpTarget
-│   ├── autoInstance.ts     # Groups meshes by geo+material into InstancedMesh (THRESHOLD=2)
+│   ├── autoInstance.ts     # Groups meshes by geo+material into InstancedMesh (THRESHOLD=2); preserves inst.name
 │   ├── cliffMaterial.ts    # Custom cliff shader material
 │   ├── waterMaterial.ts    # Animated water surface material
 │   └── waterfallMaterial.ts # Waterfall stream + pool materials
 ├── stores/
 │   ├── gameStore.ts        # Game state (modals, dialogue, zones, onboarding, joystick)
-│   ├── editorStore.ts      # Editor state + freeCamActive + viewDoorsMode + placedDoors
+│   ├── editorStore.ts      # Editor state + freeCamActive + viewDoorsMode + placedDoors + propViewerOpen/Index
+│   ├── collisionStore.ts   # Per-prop collision toggle (enabledNames Set, persisted to localStorage, version counter)
 │   └── graphicsStore.ts    # Graphics settings: bloom, shadows, camControlMode ('keyboard'|'mouse')
 ├── hooks/
 │   └── useInput.ts         # Keyboard/gamepad/touch input
@@ -179,8 +185,9 @@ Then `buildBVH(scene)` traverses and calls `geo.computeBoundsTree()` on each mes
 
 `autoInstance(env)` returns the **singleton meshes** (not instanced — unique geometry). These are stored in `visualMeshes.current` (filtered: no collision meshes, no water planes).
 
-`DistanceCuller` runs two independent culling passes every 10 frames:
+`DistanceCuller` runs three independent culling passes every 10 frames:
 - **`visualMeshes`** — hidden beyond **200u** (env singletons). Not lower — map is ~55u radius, 75u caused env to vanish at edges.
+- **`detailMiscMeshes`** — hidden beyond **30u** (outdoor detail props from detailmisc.glb). World-position of each mesh checked against player.
 - **`setDressMeshes`** — hidden beyond **15u** (house decorations from Setdress.glb). Start `visible=false`, revealed on proximity.
 
 ### Collision mesh names
@@ -211,7 +218,8 @@ After full optimization pipeline:
 - buildings.glb (after gltf-transform join): ~76 draw calls
 - Globalmisc.glb (after autoInstance): ~88 draw calls
 - Setdress.glb: ~29 draw calls (mostly hidden)
-- Total: ~439 draw calls at ~140+ FPS
+- detailmisc.glb (after autoInstance, culled at 30u): ~68 draw calls when near
+- Total: ~540 draw calls at ~140+ FPS (detailmisc fully in range)
 
 ### Material setup
 
@@ -224,6 +232,39 @@ In `Environment.tsx` `useEffect`:
 - **Buildings + Globalmisc**: `metalness=0`, `roughness=0.9`, **`emissiveIntensity=0`** (UE materials have non-zero emissive → bloom glow)
 - **Setdress**: `metalness=0`, `roughness=0.9`, `emissiveIntensity=0`, **`visible=false`** on init
 - **Do NOT set `emissiveIntensity=0` on env meshes** — some use emissive as primary color
+
+---
+
+## Prop Viewer & Collision System
+
+### detailmisc.glb
+
+138 unique mesh types (406 total instances), 4.5MB. Outdoor detail props (benches, barrels, crates, etc.). Loaded and instanced via `autoInstance` in `Environment.tsx`. **NOT in `testMapScene`** — adding it caused -20 FPS due to 406 objects in BVH raycast traversal.
+
+### Collision (detailmisc)
+
+Uses **AABB hitbox approach** instead of testMapScene/BVH:
+- `collisionStore` (Zustand) holds a `Set<string>` of `baseName`s with collision enabled, persisted to localStorage. A `version` counter triggers Environment to rebuild hitboxes.
+- In `Environment.tsx`, a `useEffect([detailmisc, collisionVersion])` registers per-instance AABB boxes via `registerHitbox(id, cx, cz, hw, hd, maxY)`.
+- For `InstancedMesh`: iterates all instances, computes world matrix per instance, transforms local bounding box.
+- Player collision checks the AABB hitbox map (O(n hitboxes)) — no raycast cost.
+
+### Prop Viewer (BottomNav → "Collision")
+
+In-world tool to browse all detailmisc props and toggle their collision:
+1. Click "Collision" in BottomNav → activates free cam, resets to index 0, opens prop viewer.
+2. `PropViewerHighlight` (3D, in Experience.tsx) creates a yellow pulsing `InstancedMesh` overlay on the current prop.
+3. `PropViewerFlyTo` ref (set by `PropViewerHighlight`, called by HUD): computes world pos of first instance, animates camera via `propViewerCameraAnim` (Bezier smoothstep).
+4. `PropViewerHUD` (DOM, in Overlay.tsx) shows: ◀◀ (-10) ◀ (-1) [name / size badge / counter] ▶ (+1) ▶▶ (+10) + collision toggle button.
+5. Size badge: red = <0.3× player height, yellow = 0.3–1.5×, green = >1.5×.
+6. Camera animation consumed by `EditorCamera.tsx` FreeOrbitView `useFrame` (smoothstep ease, duration scales with distance 350–1100ms).
+
+### propViewerRef.ts
+
+Shared mutable refs (no React state — avoids re-renders in R3F loop):
+- `propViewerCameraAnim.current` — active Bezier animation params (start/end pos + target + timing)
+- `currentEditorCam` — plain object tracking live camera state (updated every frame in FreeOrbitView)
+- `propViewerFlyTo.current` — callback set by `PropViewerHighlight`, called by HUD nav buttons
 
 ---
 
@@ -321,6 +362,9 @@ Player boundary is handled entirely by polygon code in `isInsideLand()`, not by 
 - **Do NOT zero emissiveIntensity on env** — some env meshes use emissive as their primary color
 - **DistanceCuller threshold ≥ 200 for env** — map is 55u radius, smaller values cause env to vanish at edges
 - **Setdress starts hidden** — `visible=false` on load, DistanceCuller reveals at 15u
+- **detailmisc NOT in testMapScene** — adding it drops FPS from ~140 to ~74 (406 objects, no BVH benefit at instance level). Use AABB hitboxes via collisionStore instead.
+- **autoInstance preserves inst.name** — set to `first.name` after creation so collision lookups (baseName) work on InstancedMesh
+- **propViewerFlyTo pattern** — ref-based callback: set by 3D component (has useThree access), called by DOM component (no R3F context). Avoids prop drilling and re-renders.
 - **CameraRig must early-return** when `freeCamActive || viewDoorsMode` — both use EditorCamera's OrbitControls, CameraRig would fight them
 - **freeCameraJumpTarget** in `playerRef.ts` — set to jump free cam without teleporting the player
 - **KayKit GLTF models** use `.gltf` + `.bin` + shared texture. Extension handled by regex `/\.gl(b|tf)$/`
