@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useEditorStore } from '@/stores/editorStore'
 import { HitboxEditor } from './HitboxEditor'
 import { saveEditorState } from '@/config/editorPersistence'
+import { playerPosition } from '@/lib/playerRef'
 import { clearAllHitboxes } from '@/lib/hitboxes'
 import { HITBOX_OVERRIDES } from '@/config/hitboxOverrides'
 
@@ -37,6 +38,14 @@ export function EditorSidebar() {
     saveEditorState(state.objects, state.hiddenIds, state.dynamicObjects)
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)
+  }
+
+  const handleAddDoor = () => {
+    const { x, z } = playerPosition
+    const entry = `{ id: 'door_${Date.now()}', x: ${x.toFixed(2)}, z: ${z.toFixed(2)}, radius: 1.5 },`
+    console.log('[Door Trigger]', entry)
+    navigator.clipboard.writeText(entry)
+    alert(`Copied to clipboard:\n${entry}`)
   }
 
   const handleResetHitboxes = () => {
@@ -192,6 +201,13 @@ export function EditorSidebar() {
               }`}
             >
               {saved ? 'Saved!' : 'Save All'}
+            </button>
+
+            <button
+              onClick={handleAddDoor}
+              className="w-full rounded-lg bg-amber-500/20 px-3 py-1.5 text-amber-300 hover:bg-amber-500/30 transition-colors"
+            >
+              Add Door Here
             </button>
 
             <button

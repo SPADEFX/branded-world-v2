@@ -17,6 +17,7 @@ import { SeasonalDecorations } from './SeasonalDecorations'
 import { Environment } from './Environment'
 import { DistanceCuller } from './DistanceCuller'
 import { TeleportGhost } from './TeleportGhost'
+import { DoorTriggers } from './DoorTriggers'
 import { FPSTracker } from './FPSTracker'
 import { EffectComposer, Bloom, HueSaturation, BrightnessContrast } from '@react-three/postprocessing'
 import { useGraphicsStore } from '@/stores/graphicsStore'
@@ -58,6 +59,7 @@ function SceneContents() {
       <HitboxVisuals />
       <EditorCamera />
       <TeleportGhost />
+      <DoorTriggers />
       <PostProcessing />
       <FPSTracker />
     </>

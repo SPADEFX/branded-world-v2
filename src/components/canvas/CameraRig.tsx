@@ -5,8 +5,8 @@ import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useGameStore } from '@/stores/gameStore'
 import { useEditorStore } from '@/stores/editorStore'
-import { playerPosition, cameraInput, npcPositions } from '@/lib/playerRef'
-import { fadeScenesRef, testMapScene } from '@/lib/testMapRef'
+import { playerPosition, cameraInput, npcPositions, isIndoorsRef } from '@/lib/playerRef'
+import { fadeScenesRef } from '@/lib/testMapRef'
 
 const CAM_DISTANCE_DEFAULT = 8
 const CAM_DISTANCE_MIN = 3
@@ -19,7 +19,6 @@ const CAM_TURN_SPEED = 1.5
 const CAM_PITCH_DEFAULT = 0
 const CAM_PITCH_MIN = -0.5
 const CAM_PITCH_MAX = 0.8
-const INDOOR_CEIL_CHECK = 5
 const INDOOR_BLEND_SPEED = 5
 const FOV_OUTDOOR = 45
 const FOV_INDOOR = 80
@@ -34,7 +33,6 @@ const _outdoorCamPos = new THREE.Vector3()
 const _outdoorLookAt = new THREE.Vector3()
 const _finalCamPos = new THREE.Vector3()
 const _finalLookAt = new THREE.Vector3()
-const _up = new THREE.Vector3(0, 1, 0)
 
 export function CameraRig() {
   const { camera, gl } = useThree()
@@ -47,7 +45,6 @@ export function CameraRig() {
   const tmpLook = useRef(new THREE.Vector3())
   const smoothY = useRef(0)
   const camRaycaster = useRef(new THREE.Raycaster())
-  const indoorRaycaster = useRef(new THREE.Raycaster())
   const camDir = useRef(new THREE.Vector3())
   const indoorBlend = useRef(0)
   const fadedMeshes = useRef<Map<THREE.Mesh, { origMaterial: THREE.MeshStandardMaterial; origOpacity: number; origTransparent: boolean }>>(new Map())
@@ -136,18 +133,9 @@ export function CameraRig() {
     _outdoorLookAt.set(x, smoothY.current + LOOK_HEIGHT, z)
     _outdoorCamPos.set(camX, smoothY.current + CAM_HEIGHT + vOffset, camZ)
 
-    // ── Indoor detection ──
-    const isIndoors = (() => {
-      const scenes = testMapScene.current
-      if (!scenes.length) return false
-      indoorRaycaster.current.set(_outdoorLookAt, _up)
-      indoorRaycaster.current.far = INDOOR_CEIL_CHECK
-      return indoorRaycaster.current.intersectObjects(scenes, true).length > 0
-    })()
-
     indoorBlend.current = THREE.MathUtils.lerp(
       indoorBlend.current,
-      isIndoors ? 1 : 0,
+      isIndoorsRef.current ? 1 : 0,
       1 - Math.exp(-INDOOR_BLEND_SPEED * dt),
     )
     const blend = indoorBlend.current

@@ -8,3 +8,6 @@ export const npcPositions: Record<string, { x: number; z: number }> = {}
 
 /** Set by TeleportGhost on click — consumed by Player.tsx on the next frame. */
 export const teleportTarget: { current: { x: number; y: number; z: number } | null } = { current: null }
+
+/** Toggled by DoorTriggers when player crosses a door — read by CameraRig. */
+export const isIndoorsRef: { current: boolean } = { current: false }
