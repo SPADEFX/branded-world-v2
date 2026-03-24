@@ -6,7 +6,7 @@ import * as THREE from 'three'
 import { useGameStore } from '@/stores/gameStore'
 import { useEditorStore } from '@/stores/editorStore'
 import { playerPosition, cameraInput, npcPositions } from '@/lib/playerRef'
-import { fadeScenesRef } from '@/lib/testMapRef'
+import { fadeScenesRef, testMapScene } from '@/lib/testMapRef'
 
 const CAM_DISTANCE_DEFAULT = 8
 const CAM_DISTANCE_MIN = 3
@@ -35,7 +35,9 @@ export function CameraRig() {
   const tmpLook = useRef(new THREE.Vector3())
   const smoothY = useRef(0)
   const camRaycaster = useRef(new THREE.Raycaster())
+  const collRaycaster = useRef(new THREE.Raycaster())
   const camDir = useRef(new THREE.Vector3())
+  const _toCamera = new THREE.Vector3()
   const fadedMeshes = useRef<Map<THREE.Mesh, { origMaterial: THREE.MeshStandardMaterial; origOpacity: number; origTransparent: boolean }>>(new Map())
 
   // Scroll → zoom
@@ -140,6 +142,21 @@ export function CameraRig() {
 
     const lookAt = new THREE.Vector3(x, smoothY.current + LOOK_HEIGHT, z)
     const idealCamPos = new THREE.Vector3(camX, smoothY.current + CAM_HEIGHT + vOffset, camZ)
+
+    // ── Camera collision: pull camera in if geometry blocks the view ──
+    const allScenes = testMapScene.current
+    if (allScenes.length) {
+      _toCamera.subVectors(idealCamPos, lookAt)
+      const fullDist = _toCamera.length()
+      _toCamera.normalize()
+      collRaycaster.current.set(lookAt, _toCamera)
+      collRaycaster.current.far = fullDist
+      const hits = collRaycaster.current.intersectObjects(allScenes, true)
+      if (hits.length > 0) {
+        const safeD = Math.max(0.5, hits[0].distance - 0.2)
+        idealCamPos.copy(lookAt).addScaledVector(_toCamera, safeD)
+      }
+    }
 
     // ── Obstruction fade: raycast from player toward camera, fade blocking meshes ──
     const scenes = fadeScenesRef.current
