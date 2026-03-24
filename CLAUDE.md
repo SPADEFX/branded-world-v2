@@ -27,43 +27,51 @@ src/
 ├── app/                    # Next.js app router (layout + page)
 ├── components/
 │   ├── canvas/             # All 3D components (R3F)
-│   │   ├── Experience.tsx  # Canvas root — mounts all 3D components
-│   │   ├── Environment.tsx # Loads terrain.glb + environment.glb + buildings.glb, applies materials, autoInstance, BVH
-│   │   ├── World.tsx       # Procedural terrain (polygon island), water shader, forest/beach decorations
+│   │   ├── Experience.tsx  # Canvas root — mounts all 3D components (far=2000)
+│   │   ├── Environment.tsx # Loads all 5 GLBs, applies materials, autoInstance, BVH
 │   │   ├── Player.tsx      # Player controller (WASD + gamepad + touch + ground raycasting)
 │   │   ├── NPCs.tsx        # NPC system with animations + hand props
-│   │   ├── CameraRig.tsx   # Third-person camera follow + obstruction fade
-│   │   ├── DistanceCuller.tsx # Hides non-instanced singleton meshes beyond 200u (visualMeshes ref)
+│   │   ├── CameraRig.tsx   # Third-person follow + pointer-lock mouse mode + obstruction fade
+│   │   ├── DistanceCuller.tsx # Dual-threshold culling: 200u (visualMeshes) / 15u (setDressMeshes)
 │   │   ├── TeleportGhost.tsx  # Editor TP mode — wireframe ghost + click to teleport
 │   │   ├── InteractionZones.tsx # Proximity-triggered UI zones
 │   │   ├── SeasonalDecorations.tsx # Halloween/Christmas auto-switch
 │   │   ├── Lighting.tsx    # Sun, shadows, fog
 │   │   ├── FootstepDust.tsx # Particle effect
-│   │   └── Editor*.tsx / Hitbox*.tsx / DynamicObjects / Placement # Editor system
+│   │   ├── DoorPlacer.tsx  # Place door triggers on building walls (editor tool)
+│   │   ├── DoorTriggers.tsx # Renders + manages placed door triggers
+│   │   ├── DoorViewer.tsx  # Visual preview of placed doors (x-ray/full/wireframe)
+│   │   ├── EditorCamera.tsx # Free orbit + top-down views; activates on freeCamActive or viewDoorsMode
+│   │   └── Editor*.tsx / Hitbox*.tsx / DynamicObjects # Editor system
 │   └── ui/                 # 2D overlay components (React DOM)
 │       ├── Modal.tsx       # Zone content modals
 │       ├── DialogueBox.tsx # NPC dialogue system
-│       ├── HUD.tsx         # Discovery counter + interaction prompt (no collectibles)
+│       ├── HUD.tsx         # Discovery counter + interaction prompt
+│       ├── BottomNav.tsx   # Bottom navbar: Caméra libre / Portes (fantasy dark style)
+│       ├── DoorsSidebar.tsx # Doors panel — list, view style, place/export
+│       ├── GraphicsDashboard.tsx # Graphics settings: bloom, shadows, camera mode
 │       ├── EditorSidebar.tsx # Editor panel (Move/Rotate/Eraser/TP/Save)
 │       └── Onboarding.tsx  # First-visit tutorial
 ├── config/
 │   ├── zones.ts            # 5 interaction zones (positions + content)
 │   ├── npcs.ts             # NPC configs (positions, models, dialogue, props)
+│   ├── indoorZones.ts      # Door trigger types + export helper
 │   ├── seasonal.ts         # Halloween + Christmas decoration configs
 │   ├── modelCatalog.ts     # Editor model browser catalog
 │   └── hitboxOverrides.ts  # Per-model collision box overrides
 ├── lib/
 │   ├── worldShape.ts       # Continent polygon, point-in-polygon, biome detection
 │   ├── hitboxes.ts         # AABB collision system
-│   ├── testMapRef.ts       # testMapScene (Object3D[]) + visualMeshes (Mesh[]) shared refs
-│   ├── playerRef.ts        # playerPosition, playerRotation, teleportTarget shared mutable refs
+│   ├── testMapRef.ts       # testMapScene, visualMeshes, fadeScenesRef, buildingScenesRef, setDressMeshes
+│   ├── playerRef.ts        # playerPosition, playerRotation, teleportTarget, freeCameraJumpTarget
 │   ├── autoInstance.ts     # Groups meshes by geo+material into InstancedMesh (THRESHOLD=2)
 │   ├── cliffMaterial.ts    # Custom cliff shader material
 │   ├── waterMaterial.ts    # Animated water surface material
 │   └── waterfallMaterial.ts # Waterfall stream + pool materials
 ├── stores/
 │   ├── gameStore.ts        # Game state (modals, dialogue, zones, onboarding, joystick)
-│   └── editorStore.ts      # Editor state (selection, cameraMode, eraserMode, teleportMode)
+│   ├── editorStore.ts      # Editor state + freeCamActive + viewDoorsMode + placedDoors
+│   └── graphicsStore.ts    # Graphics settings: bloom, shadows, camControlMode ('keyboard'|'mouse')
 ├── hooks/
 │   └── useInput.ts         # Keyboard/gamepad/touch input
 └── types/
@@ -74,9 +82,11 @@ src/
 
 ```
 models/
-├── terrain.glb             # Base terrain mesh (no autoInstance, no BVH needed for visuals)
-├── environment.glb         # All env objects: rocks, paths, cliffs, water, waterfalls, trees
+├── terrain.glb             # Base terrain mesh (no autoInstance, no BVH)
+├── environment.glb         # Env objects: rocks, paths, cliffs, water, waterfalls, trees
 ├── buildings.glb           # All buildings — processed with gltf-transform join + draco
+├── Globalmisc.glb          # Misc props (stairs, statues, fountains…) — autoInstance + BVH
+├── Setdress.glb            # House interior decorations — culled at 15u, start hidden
 ├── character/              # 24 KayKit character GLBs
 │   └── anims/              # 8 animation pack GLBs
 ├── nature/                 # Kenney Nature Kit GLBs (trees, rocks, flowers)
@@ -114,21 +124,26 @@ Export each collection separately as GLB:
 ### Post-export optimization (CLI)
 
 ```bash
-# ONLY use join on buildings.glb — NOT on environment.glb or terrain.glb
-# join merges meshes sharing the same material → huge draw call reduction for buildings
+# Step 1 — resize textures (UE assets often export at 4096x4096 → GPU OOM → blob: errors)
+npx @gltf-transform/cli resize --width 2048 --height 2048 <file>.glb <file>.glb
+
+# Step 2 — join (buildings ONLY — reduces ~9000 draw calls → ~76)
 npx @gltf-transform/cli join buildings.glb buildings.glb
 
-# Re-compress after join (join decodes Draco, inflating file size)
-npx @gltf-transform/cli draco buildings.glb buildings.glb
+# Step 3 — recompress geometry (join/resize decode Draco, inflating file size)
+npx @gltf-transform/cli draco <file>.glb <file>.glb
 ```
 
-**⚠️ NEVER run `gltf-transform join` on environment.glb or terrain.glb.**
+**⚠️ NEVER run `gltf-transform join` on environment.glb, Globalmisc.glb, or Setdress.glb.**
 environment.glb uses name-based material assignment (cliff, water, waterfall). Joining destroys mesh names → materials get applied to wrong geometry → 2 FPS + visual corruption.
+
+**⚠️ Always resize to 2048 before draco.**
+4096×4096 WebP textures = 89 MB GPU each. Loading many simultaneously causes `THREE.GLTFLoader: Couldn't load texture blob:` errors and white materials. 2048×2048 = 22 MB GPU, no failures.
 
 ### Why `join` works on buildings but not environment
 
 - Buildings: many unique meshes sharing the same material → merging reduces draw calls from ~9000 to ~76
-- Environment: meshes have unique names used by code to assign custom materials (waterMaterial, cliffMaterial, etc.) → names must be preserved
+- Environment/Misc/Setdress: meshes have unique names used by code to assign custom materials (waterMaterial, cliffMaterial, etc.) → names must be preserved
 
 ---
 
@@ -164,7 +179,9 @@ Then `buildBVH(scene)` traverses and calls `geo.computeBoundsTree()` on each mes
 
 `autoInstance(env)` returns the **singleton meshes** (not instanced — unique geometry). These are stored in `visualMeshes.current` (filtered: no collision meshes, no water planes).
 
-`DistanceCuller` hides these singletons when they're more than 200 units from the player. This saves draw calls for far-away decorative objects. The threshold is 200u (not lower — the map is ~55u radius, so 75u was too small and caused env to disappear at edges).
+`DistanceCuller` runs two independent culling passes every 10 frames:
+- **`visualMeshes`** — hidden beyond **200u** (env singletons). Not lower — map is ~55u radius, 75u caused env to vanish at edges.
+- **`setDressMeshes`** — hidden beyond **15u** (house decorations from Setdress.glb). Start `visible=false`, revealed on proximity.
 
 ### Collision mesh names
 
@@ -192,7 +209,9 @@ After full optimization pipeline:
 - terrain.glb: ~10 draw calls
 - environment.glb (after autoInstance): ~300 draw calls
 - buildings.glb (after gltf-transform join): ~76 draw calls
-- Total: ~388 draw calls at ~180 FPS
+- Globalmisc.glb (after autoInstance): ~88 draw calls
+- Setdress.glb: ~29 draw calls (mostly hidden)
+- Total: ~439 draw calls at ~140+ FPS
 
 ### Material setup
 
@@ -202,7 +221,9 @@ In `Environment.tsx` `useEffect`:
 - **Waterfall pool** (`water_plane_waterfall` in name): `waterfallPoolMaterial`
 - **Water planes** (`water_plane` or `water_dip`, not waterfall): `waterMaterial` — applied after autoInstance to the resulting InstancedMesh
 - **Ground meshes**: `castShadow = false`, `receiveShadow = true`, `metalness=0`, `roughness=0.9`
-- **Buildings**: `castShadow = true`, `receiveShadow = true`, `metalness=0`, `roughness=0.9`, **`emissiveIntensity=0`** (some UE materials have emissive that causes green glow with bloom)
+- **Buildings + Globalmisc**: `metalness=0`, `roughness=0.9`, **`emissiveIntensity=0`** (UE materials have non-zero emissive → bloom glow)
+- **Setdress**: `metalness=0`, `roughness=0.9`, `emissiveIntensity=0`, **`visible=false`** on init
+- **Do NOT set `emissiveIntensity=0` on env meshes** — some use emissive as primary color
 
 ---
 
@@ -228,15 +249,45 @@ Used by the editor TP mode (`TeleportGhost.tsx`).
 
 ---
 
-## Editor System
+## Camera System
+
+### Third-person follow (`CameraRig.tsx`)
+
+Default mode. Follows player with orbit + obstruction fade. Skips if `freeCamActive || viewDoorsMode`.
+
+Two control modes (toggled in Graphics settings):
+- **ZQSD** (`camControlMode: 'keyboard'`): right-click drag to rotate (default)
+- **Souris** (`camControlMode: 'mouse'`): click canvas to lock pointer, mouse movement rotates camera. ESC to unlock.
+
+### Free camera (`EditorCamera.tsx`)
+
+Activates when `freeCamActive || viewDoorsMode` (even without full editor). Always initializes at current player position. Uses R3F `OrbitControls`.
+
+`freeCameraJumpTarget.current = { x, y, z }` — set from anywhere to jump the free cam to a position (used by DoorsSidebar row click).
+
+### Editor (`EditorCamera.tsx` + editor store)
 
 Toggle with backtick key. Camera modes: Follow / Top-down / Free orbit.
 
-**Teleport mode (TP button)**: Raycasts against `testMapScene` on mouse move, shows a green wireframe capsule ghost. Click to teleport the player. Useful for testing areas far from spawn or finding floating buildings.
+**Teleport mode (TP button)**: Raycasts against `testMapScene` on mouse move, shows a green wireframe capsule ghost. Click to teleport the player.
 
 **Eraser mode**: Click any object to delete/hide it.
 
 **Save**: Persists object positions + hidden IDs to localStorage.
+
+---
+
+## Door System
+
+Doors are placed interactively via the **BottomNav → Portes** menu.
+
+- **`DoorPlacer.tsx`** — raycasts against `buildingScenesRef` to find walls, shows ghost preview. X/C to rotate. Click to place. Saves `{ x, y, z, nx, nz, radius }` — `y` comes from terrain raycast hit point.
+- **`DoorTriggers.tsx`** — renders placed doors as interactive 3D meshes, handles grab/move.
+- **`DoorViewer.tsx`** — visual styles: x-ray (depthTest off), full, wireframe.
+- **`DoorsSidebar.tsx`** — lists placed doors, rename/flip/delete, export to clipboard as TS config.
+- **`indoorZones.ts`** — `DoorTrigger` type + `exportDoorsToClipboard()`.
+
+Door state lives in `editorStore`: `placedDoors`, `selectedDoorId`, `placeDoorMode`, `viewDoorsMode`, `doorViewStyle`.
 
 ---
 
@@ -261,12 +312,17 @@ Player boundary is handled entirely by polygon code in `isInsideLand()`, not by 
 
 ### Important Patterns
 
-- **Avoid `gltf-transform join` on environment.glb** — destroys name-based material assignment
+- **Avoid `gltf-transform join` on environment.glb / Globalmisc.glb / Setdress.glb** — destroys name-based material assignment
+- **Always resize textures to 2048 before draco** — 4096×4096 causes GPU OOM blob: errors at runtime
 - **Always BVH after instancing** — call `buildBVH(scene)` after `autoInstance(scene)` or any geometry is finalized
 - **testMapScene is an array** — use `intersectObjects(testMapScene.current, true)` never `intersectObject`
 - **Buildings from Blender are linked assets** — cannot Join in Blender, use `gltf-transform join` on the GLB directly
-- **emissiveIntensity = 0 for buildings** — UE-sourced materials often have non-zero emissive, causes bloom glow
-- **DistanceCuller threshold ≥ 200** — map is 55u radius, smaller values cause env to vanish at edges
+- **emissiveIntensity = 0 for buildings + misc** — UE-sourced materials often have non-zero emissive, causes bloom glow
+- **Do NOT zero emissiveIntensity on env** — some env meshes use emissive as their primary color
+- **DistanceCuller threshold ≥ 200 for env** — map is 55u radius, smaller values cause env to vanish at edges
+- **Setdress starts hidden** — `visible=false` on load, DistanceCuller reveals at 15u
+- **CameraRig must early-return** when `freeCamActive || viewDoorsMode` — both use EditorCamera's OrbitControls, CameraRig would fight them
+- **freeCameraJumpTarget** in `playerRef.ts` — set to jump free cam without teleporting the player
 - **KayKit GLTF models** use `.gltf` + `.bin` + shared texture. Extension handled by regex `/\.gl(b|tf)$/`
 - **Kenney GLB models** have `metallicFactor=1` — must force `metalness=0`
 - **Seasonal**: Auto-detects Halloween (Oct 1–Nov 5) / Christmas (Dec 1–Jan 5)
