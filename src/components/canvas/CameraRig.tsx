@@ -6,24 +6,33 @@ import * as THREE from 'three'
 import { useGameStore } from '@/stores/gameStore'
 import { useEditorStore } from '@/stores/editorStore'
 import { playerPosition, cameraInput, npcPositions } from '@/lib/playerRef'
-import { fadeScenesRef, testMapScene, buildingClipPlane } from '@/lib/testMapRef'
+import { fadeScenesRef, testMapScene } from '@/lib/testMapRef'
 
 const CAM_DISTANCE_DEFAULT = 8
 const CAM_DISTANCE_MIN = 3
 const CAM_DISTANCE_MAX = 20
 const CAM_HEIGHT = 4
 const LOOK_HEIGHT = 1.9
-const INDOOR_CEIL_CHECK = 5  // max ceiling height to consider "indoors"
+const EYE_HEIGHT = 1.65
 const POSITION_DAMPING = 6
 const CAM_TURN_SPEED = 1.5
 const CAM_PITCH_DEFAULT = 0
-const CAM_PITCH_MIN = -0.5  // regarder vers le haut
-const CAM_PITCH_MAX = 0.8   // regarder vers le bas
+const CAM_PITCH_MIN = -0.5
+const CAM_PITCH_MAX = 0.8
+const INDOOR_CEIL_CHECK = 5
+const INDOOR_BLEND_SPEED = 5
 
 const DIALOGUE_CAM_HEIGHT = 2.2
 const DIALOGUE_CAM_SIDE = 2.5
 const DIALOGUE_CAM_BACK = 3
 const DIALOGUE_DAMPING = 3
+
+const _fpLookAt = new THREE.Vector3()
+const _outdoorCamPos = new THREE.Vector3()
+const _outdoorLookAt = new THREE.Vector3()
+const _finalCamPos = new THREE.Vector3()
+const _finalLookAt = new THREE.Vector3()
+const _up = new THREE.Vector3(0, 1, 0)
 
 export function CameraRig() {
   const { camera, gl } = useThree()
@@ -36,12 +45,11 @@ export function CameraRig() {
   const tmpLook = useRef(new THREE.Vector3())
   const smoothY = useRef(0)
   const camRaycaster = useRef(new THREE.Raycaster())
-  const camDir = useRef(new THREE.Vector3())
   const indoorRaycaster = useRef(new THREE.Raycaster())
-  const _up = new THREE.Vector3(0, 1, 0)
+  const camDir = useRef(new THREE.Vector3())
+  const indoorBlend = useRef(0)
   const fadedMeshes = useRef<Map<THREE.Mesh, { origMaterial: THREE.MeshStandardMaterial; origOpacity: number; origTransparent: boolean }>>(new Map())
 
-  // Scroll → zoom
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
@@ -51,7 +59,6 @@ export function CameraRig() {
         CAM_DISTANCE_MAX,
       )
     }
-    // Clic droit → pitch vertical
     const onMouseDown = (e: MouseEvent) => {
       if (e.button === 2) { isRightDragging.current = true; lastMouseY.current = e.clientY }
     }
@@ -81,7 +88,6 @@ export function CameraRig() {
   }, [gl])
 
   useFrame((_, delta) => {
-    // Skip when editor uses its own camera
     const { enabled: editorOn, cameraMode } = useEditorStore.getState()
     if (editorOn && cameraMode !== 'follow') return
 
@@ -94,42 +100,26 @@ export function CameraRig() {
     if (activeDialogue) {
       const npcPos = npcPositions[activeDialogue.npcId]
       if (npcPos) {
-        // Direction from player to NPC
         const dx = npcPos.x - x
         const dz = npcPos.z - z
         const dist = Math.sqrt(dx * dx + dz * dz) || 1
-        const nx = dx / dist
-        const nz = dz / dist
-
-        // Perpendicular (right side)
-        const px = -nz
-        const pz = nx
-
-        // Camera: midpoint between player & NPC, offset to the side and back
-        const midX = (x + npcPos.x) / 2
-        const midZ = (z + npcPos.z) / 2
+        const nx = dx / dist; const nz = dz / dist
+        const px = -nz; const pz = nx
+        const midX = (x + npcPos.x) / 2; const midZ = (z + npcPos.z) / 2
         tmpTarget.current.set(
           midX + px * DIALOGUE_CAM_SIDE - nx * DIALOGUE_CAM_BACK,
           y + DIALOGUE_CAM_HEIGHT,
           midZ + pz * DIALOGUE_CAM_SIDE - nz * DIALOGUE_CAM_BACK,
         )
-
-        // Look at the NPC
         tmpLook.current.set(npcPos.x, y + 1.2, npcPos.z)
-
         camera.position.lerp(tmpTarget.current, 1 - Math.exp(-DIALOGUE_DAMPING * dt))
         camera.lookAt(tmpLook.current)
-
-        // Keep currentAngle in sync so return transition is smooth
-        currentAngle.current = Math.atan2(
-          x - camera.position.x,
-          z - camera.position.z,
-        )
+        currentAngle.current = Math.atan2(x - camera.position.x, z - camera.position.z)
       }
       return
     }
 
-    // ── Normal orbit mode ──
+    // ── Normal orbit ──
     currentAngle.current -= cameraInput.x * CAM_TURN_SPEED * dt
 
     const angle = currentAngle.current
@@ -141,30 +131,55 @@ export function CameraRig() {
     const camX = x - Math.sin(angle) * hDist
     const camZ = z - Math.cos(angle) * hDist
 
-    const lookAt = new THREE.Vector3(x, smoothY.current + LOOK_HEIGHT, z)
-    const idealCamPos = new THREE.Vector3(camX, smoothY.current + CAM_HEIGHT + vOffset, camZ)
+    _outdoorLookAt.set(x, smoothY.current + LOOK_HEIGHT, z)
+    _outdoorCamPos.set(camX, smoothY.current + CAM_HEIGHT + vOffset, camZ)
 
-    // ── Indoor detection: ray up from player, check for ceiling ──
+    // ── Indoor detection ──
     const isIndoors = (() => {
       const scenes = testMapScene.current
       if (!scenes.length) return false
-      indoorRaycaster.current.set(lookAt, _up)
+      indoorRaycaster.current.set(_outdoorLookAt, _up)
       indoorRaycaster.current.far = INDOOR_CEIL_CHECK
-      const hits = indoorRaycaster.current.intersectObjects(scenes, true)
-      return hits.length > 0
+      return indoorRaycaster.current.intersectObjects(scenes, true).length > 0
     })()
 
-    // Update building clip plane: cut above player+2.5 when indoors, disabled outside
-    buildingClipPlane.constant = isIndoors ? playerPosition.y + 2.5 : 1e9
+    indoorBlend.current = THREE.MathUtils.lerp(
+      indoorBlend.current,
+      isIndoors ? 1 : 0,
+      1 - Math.exp(-INDOOR_BLEND_SPEED * dt),
+    )
+    const blend = indoorBlend.current
 
-    // ── Obstruction fade: env only (buildings handled by clip plane) ──
+    // ── First-person target (eye position looking forward) ──
+    const fpEyeX = x
+    const fpEyeY = y + EYE_HEIGHT
+    const fpEyeZ = z
+    _fpLookAt.set(
+      x + Math.sin(angle) * 3,
+      y + EYE_HEIGHT,
+      z + Math.cos(angle) * 3,
+    )
+
+    // ── Blend outdoor ↔ first-person ──
+    _finalCamPos.set(
+      THREE.MathUtils.lerp(_outdoorCamPos.x, fpEyeX, blend),
+      THREE.MathUtils.lerp(_outdoorCamPos.y, fpEyeY, blend),
+      THREE.MathUtils.lerp(_outdoorCamPos.z, fpEyeZ, blend),
+    )
+    _finalLookAt.set(
+      THREE.MathUtils.lerp(_outdoorLookAt.x, _fpLookAt.x, blend),
+      THREE.MathUtils.lerp(_outdoorLookAt.y, _fpLookAt.y, blend),
+      THREE.MathUtils.lerp(_outdoorLookAt.z, _fpLookAt.z, blend),
+    )
+
+    // ── Obstruction fade (env only, only when third-person) ──
     const scenes = fadeScenesRef.current
     const currentlyFaded = new Set<THREE.Mesh>()
 
-    if (scenes.length) {
-      camDir.current.subVectors(idealCamPos, lookAt).normalize()
-      const dist = lookAt.distanceTo(idealCamPos)
-      camRaycaster.current.set(lookAt, camDir.current)
+    if (blend < 0.5 && scenes.length) {
+      camDir.current.subVectors(_outdoorCamPos, _outdoorLookAt).normalize()
+      const dist = _outdoorLookAt.distanceTo(_outdoorCamPos)
+      camRaycaster.current.set(_outdoorLookAt, camDir.current)
       camRaycaster.current.far = dist
       const hits = camRaycaster.current.intersectObjects(scenes, true)
 
@@ -172,7 +187,6 @@ export function CameraRig() {
         const mesh = hit.object as THREE.Mesh
         if (!mesh.isMesh || Array.isArray(mesh.material)) continue
         currentlyFaded.add(mesh)
-
         if (!fadedMeshes.current.has(mesh)) {
           const origMat = mesh.material as THREE.MeshStandardMaterial
           const cloned = origMat.clone()
@@ -184,31 +198,24 @@ export function CameraRig() {
           })
           mesh.material = cloned
         }
-
         const mat = mesh.material as THREE.MeshStandardMaterial
         mat.opacity = THREE.MathUtils.lerp(mat.opacity, 0.15, 1 - Math.exp(-10 * dt))
       }
     }
 
-    // Restore meshes no longer blocking
     for (const [mesh, orig] of fadedMeshes.current) {
       if (currentlyFaded.has(mesh)) continue
       const mat = mesh.material as THREE.MeshStandardMaterial
       mat.opacity = THREE.MathUtils.lerp(mat.opacity, orig.origOpacity, 1 - Math.exp(-8 * dt))
       if (Math.abs(mat.opacity - orig.origOpacity) < 0.01) {
-        // Restore original material and dispose the clone
         mesh.material = orig.origMaterial
         mat.dispose()
         fadedMeshes.current.delete(mesh)
       }
     }
 
-
-    tmpTarget.current.copy(idealCamPos)
-    tmpLook.current.copy(lookAt)
-
-    camera.position.lerp(tmpTarget.current, 1 - Math.exp(-POSITION_DAMPING * dt))
-    camera.lookAt(tmpLook.current)
+    camera.position.lerp(_finalCamPos, 1 - Math.exp(-POSITION_DAMPING * dt))
+    camera.lookAt(_finalLookAt)
   })
 
   return null
