@@ -18,8 +18,11 @@ import { Environment } from './Environment'
 import { DistanceCuller } from './DistanceCuller'
 import { TeleportGhost } from './TeleportGhost'
 import { DoorTriggers } from './DoorTriggers'
+import { DoorPlacer } from './DoorPlacer'
+import { DoorViewer } from './DoorViewer'
 import { FPSTracker } from './FPSTracker'
 import { EffectComposer, Bloom, HueSaturation, BrightnessContrast } from '@react-three/postprocessing'
+import { Preload } from '@react-three/drei'
 import { useGraphicsStore } from '@/stores/graphicsStore'
 
 function PostProcessing() {
@@ -60,6 +63,8 @@ function SceneContents() {
       <EditorCamera />
       <TeleportGhost />
       <DoorTriggers />
+      <DoorPlacer />
+      <DoorViewer />
       <PostProcessing />
       <FPSTracker />
     </>
@@ -77,7 +82,7 @@ export function Experience() {
         powerPreference: 'high-performance',
       }}
       dpr={Math.min(window.devicePixelRatio, 1.5)}
-      camera={{ fov: 45, near: 0.1, far: 200, position: [0, 10, 28] }}
+      camera={{ fov: 45, near: 0.1, far: 2000, position: [0, 10, 28] }}
       style={{ position: 'absolute', inset: 0 }}
     >
       <Suspense fallback={null}>

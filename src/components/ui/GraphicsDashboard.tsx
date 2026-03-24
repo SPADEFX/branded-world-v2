@@ -236,6 +236,26 @@ export function GraphicsDashboard() {
             </div>
           </div>
 
+          <Section title="Controls">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 12, color: '#ccc' }}>Camera control</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {(['keyboard', 'mouse'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => set({ camControlMode: mode })}
+                    style={{
+                      padding: '3px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: 'none',
+                      background: store.camControlMode === mode ? '#4ade80' : '#333',
+                      color: store.camControlMode === mode ? '#000' : '#aaa',
+                      fontWeight: store.camControlMode === mode ? 700 : 400,
+                    }}
+                  >{mode === 'keyboard' ? 'ZQSD' : 'Souris'}</button>
+                ))}
+              </div>
+            </div>
+          </Section>
+
           <Section title="Shadows">
             <Toggle label="Enable shadows" value={store.shadows} onChange={(v) => set({ shadows: v })} />
             <Select label="Shadow map" value={store.shadowMapSize} options={[512, 1024, 2048]} onChange={(v) => set({ shadowMapSize: v as 512 | 1024 | 2048 })} />

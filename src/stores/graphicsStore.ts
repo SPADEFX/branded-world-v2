@@ -28,6 +28,9 @@ interface GraphicsState {
   ambientIntensity: number
   directionalIntensity: number
 
+  // Controls
+  camControlMode: 'keyboard' | 'mouse'
+
   // UI
   dashboardOpen: boolean
 
@@ -56,6 +59,8 @@ export const useGraphicsStore = create<GraphicsState>((set) => ({
 
   ambientIntensity: 0.75,
   directionalIntensity: 2.0,
+
+  camControlMode: 'keyboard',
 
   dashboardOpen: false,
 

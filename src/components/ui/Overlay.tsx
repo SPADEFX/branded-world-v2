@@ -8,6 +8,8 @@ import { MobileControls } from './MobileControls'
 import { DialogueBox } from './DialogueBox'
 import { AmbientMusic } from './AmbientMusic'
 import { EditorSidebar } from './EditorSidebar'
+import { BottomNav } from './BottomNav'
+import { DoorsSidebar } from './DoorsSidebar'
 
 export function Overlay() {
   const [isMobile, setIsMobile] = useState(false)
@@ -24,6 +26,8 @@ export function Overlay() {
       <DialogueBox />
       <AmbientMusic />
       <EditorSidebar />
+      <DoorsSidebar />
+      <BottomNav />
       {isMobile && <MobileControls />}
     </div>
   )

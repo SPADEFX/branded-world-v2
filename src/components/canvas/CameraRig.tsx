@@ -5,6 +5,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useGameStore } from '@/stores/gameStore'
 import { useEditorStore } from '@/stores/editorStore'
+import { useGraphicsStore } from '@/stores/graphicsStore'
 import { playerPosition, cameraInput, npcPositions, isIndoorsRef } from '@/lib/playerRef'
 import { fadeScenesRef } from '@/lib/testMapRef'
 
@@ -39,8 +40,6 @@ export function CameraRig() {
   const currentAngle = useRef(0)
   const camDistance = useRef(CAM_DISTANCE_DEFAULT)
   const camPitch = useRef(CAM_PITCH_DEFAULT)
-  const isRightDragging = useRef(false)
-  const lastMouseY = useRef(0)
   const tmpTarget = useRef(new THREE.Vector3())
   const tmpLook = useRef(new THREE.Vector3())
   const smoothY = useRef(0)
@@ -50,6 +49,8 @@ export function CameraRig() {
   const fadedMeshes = useRef<Map<THREE.Mesh, { origMaterial: THREE.MeshStandardMaterial; origOpacity: number; origTransparent: boolean }>>(new Map())
 
   useEffect(() => {
+    const canvas = gl.domElement
+
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       camDistance.current = THREE.MathUtils.clamp(
@@ -58,36 +59,41 @@ export function CameraRig() {
         CAM_DISTANCE_MAX,
       )
     }
-    const onMouseDown = (e: MouseEvent) => {
-      if (e.button === 2) { isRightDragging.current = true; lastMouseY.current = e.clientY }
-    }
+
     const onMouseMove = (e: MouseEvent) => {
-      if (!isRightDragging.current) return
-      const dy = e.clientY - lastMouseY.current
-      lastMouseY.current = e.clientY
+      if (document.pointerLockElement !== canvas) return
+      if (useGraphicsStore.getState().camControlMode !== 'mouse') return
+      currentAngle.current -= e.movementX * 0.003
       camPitch.current = THREE.MathUtils.clamp(
-        camPitch.current + dy * 0.005,
+        camPitch.current + e.movementY * 0.003,
         CAM_PITCH_MIN,
         CAM_PITCH_MAX,
       )
     }
-    const onMouseUp = (e: MouseEvent) => { if (e.button === 2) isRightDragging.current = false }
 
-    const canvas = gl.domElement
+    const onClick = () => {
+      if (useGraphicsStore.getState().camControlMode !== 'mouse') return
+      const { enabled: editorOn, cameraMode } = useEditorStore.getState()
+      if (editorOn && cameraMode !== 'follow') return
+      const { activeModal, activeDialogue } = useGameStore.getState()
+      if (activeModal || activeDialogue) return
+      if (document.pointerLockElement !== canvas) canvas.requestPointerLock()
+    }
+
     canvas.addEventListener('wheel', onWheel, { passive: false })
-    canvas.addEventListener('mousedown', onMouseDown)
-    canvas.addEventListener('mousemove', onMouseMove)
-    canvas.addEventListener('mouseup', onMouseUp)
+    canvas.addEventListener('click', onClick)
+    window.addEventListener('mousemove', onMouseMove)
     return () => {
       canvas.removeEventListener('wheel', onWheel)
-      canvas.removeEventListener('mousedown', onMouseDown)
-      canvas.removeEventListener('mousemove', onMouseMove)
-      canvas.removeEventListener('mouseup', onMouseUp)
+      canvas.removeEventListener('click', onClick)
+      window.removeEventListener('mousemove', onMouseMove)
+      if (document.pointerLockElement === canvas) document.exitPointerLock()
     }
   }, [gl])
 
   useFrame((_, delta) => {
-    const { enabled: editorOn, cameraMode } = useEditorStore.getState()
+    const { enabled: editorOn, cameraMode, freeCamActive, viewDoorsMode } = useEditorStore.getState()
+    if (freeCamActive || viewDoorsMode) return
     if (editorOn && cameraMode !== 'follow') return
 
     const dt = Math.min(delta, 0.05)

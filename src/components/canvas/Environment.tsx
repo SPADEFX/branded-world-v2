@@ -5,7 +5,7 @@ import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh'
-import { testMapScene, visualMeshes, fadeScenesRef } from '@/lib/testMapRef'
+import { testMapScene, visualMeshes, fadeScenesRef, buildingScenesRef, setDressMeshes } from '@/lib/testMapRef'
 import { cliffMaterial, isCliff } from '@/lib/cliffMaterial'
 import { autoInstance, mergeByMaterial } from '@/lib/autoInstance'
 import { waterfallStreamMaterial, waterfallPoolMaterial, waterfallUniforms } from '@/lib/waterfallMaterial'
@@ -44,6 +44,8 @@ export function Environment() {
   const { scene: terrain } = useGLTF('/models/terrain.glb')
   const { scene: env } = useGLTF('/models/environment.glb')
   const { scene: buildings } = useGLTF('/models/buildings.glb')
+  const { scene: misc } = useGLTF('/models/Globalmisc.glb')
+  const { scene: setdress } = useGLTF('/models/setdress.glb')
 
   useFrame((_, delta) => {
     waterfallUniforms.uTime.value += delta
@@ -177,17 +179,69 @@ export function Environment() {
     buildBVH(buildings)
 
     testMapScene.current = [...testMapScene.current.filter((s) => s !== buildings), buildings]
+    buildingScenesRef.current = [buildings]
 
     return () => {
       testMapScene.current = testMapScene.current.filter((s) => s !== buildings)
+      buildingScenesRef.current = []
     }
   }, [buildings])
+
+  useEffect(() => {
+    const meshes: THREE.Mesh[] = []
+    setdress.traverse((child) => {
+      if (!(child as THREE.Mesh).isMesh) return
+      const mesh = child as THREE.Mesh
+      mesh.castShadow = false
+      mesh.receiveShadow = true
+      mesh.visible = false  // start hidden, DistanceCuller reveals on proximity
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      for (const mat of mats) {
+        const m = mat as THREE.MeshStandardMaterial
+        if (!m.isMeshStandardMaterial) continue
+        m.metalness = 0
+        m.roughness = 0.9
+        m.emissiveIntensity = 0
+      }
+      meshes.push(mesh)
+    })
+    buildBVH(setdress)
+    setDressMeshes.current = meshes
+    return () => { setDressMeshes.current = [] }
+  }, [setdress])
+
+  useEffect(() => {
+    misc.traverse((child) => {
+      if (!(child as THREE.Mesh).isMesh) return
+      const mesh = child as THREE.Mesh
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+      if (isCliff(mesh.name)) { mesh.material = cliffMaterial; return }
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      for (const mat of mats) {
+        const m = mat as THREE.MeshStandardMaterial
+        if (!m.isMeshStandardMaterial) continue
+        m.metalness = 0
+        m.roughness = 0.9
+        m.emissiveIntensity = 0
+      }
+    })
+    autoInstance(misc)
+    buildBVH(misc)
+    testMapScene.current = [...testMapScene.current.filter((s) => s !== misc), misc]
+
+    return () => {
+      testMapScene.current = testMapScene.current.filter((s) => s !== misc)
+    }
+  }, [misc])
 
   return (
     <>
       <primitive object={terrain} />
       <primitive object={env} />
       <primitive object={buildings} />
+      <primitive object={misc} />
+      <primitive object={setdress} />
     </>
   )
 }
@@ -195,3 +249,5 @@ export function Environment() {
 useGLTF.preload('/models/terrain.glb')
 useGLTF.preload('/models/environment.glb')
 useGLTF.preload('/models/buildings.glb')
+useGLTF.preload('/models/Globalmisc.glb')
+useGLTF.preload('/models/setdress.glb')

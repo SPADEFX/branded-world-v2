@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import * as THREE from 'three'
 import { savedHiddenIds, savedDynamicObjects } from '@/config/editorPersistence'
+import { type DoorTrigger, loadSavedDoors, persistDoors } from '@/config/indoorZones'
 
 export interface EditorObject {
   id: string
@@ -24,6 +25,10 @@ interface EditorState {
   dragging: boolean
   eraserMode: boolean
   teleportMode: boolean
+  placeDoorMode: boolean
+  viewDoorsMode: boolean
+  placedDoors: DoorTrigger[]
+  selectedDoorId: string | null
   cameraMode: 'follow' | 'top' | 'free'
   objects: Record<string, EditorObject>
   dynamicObjects: EditorObject[]
@@ -35,6 +40,21 @@ interface EditorState {
   setDragging: (d: boolean) => void
   setEraserMode: (mode: boolean) => void
   setTeleportMode: (mode: boolean) => void
+  setPlaceDoorMode: (mode: boolean) => void
+  doorTransformMode: 'grab' | 'rotate' | 'scale' | null
+  doorViewStyle: 'xray' | 'full' | 'wireframe'
+  freeCamActive: boolean
+  setFreeCamActive: (v: boolean) => void
+  setViewDoorsMode: (mode: boolean) => void
+  setDoorTransformMode: (mode: 'grab' | 'rotate' | 'scale' | null) => void
+  setDoorViewStyle: (style: 'xray' | 'full' | 'wireframe') => void
+  selectDoor: (id: string | null) => void
+  addDoor: (door: DoorTrigger) => void
+  updateDoor: (id: string, partial: Partial<DoorTrigger>) => void
+  removeDoor: (id: string) => void
+  flipDoor: (id: string) => void
+  rotateDoor: (id: string, delta: number) => void
+  renameDoor: (id: string, name: string) => void
   setCameraMode: (mode: 'follow' | 'top' | 'free') => void
   register: (obj: EditorObject) => void
   updatePosition: (id: string, pos: THREE.Vector3) => void
@@ -67,6 +87,13 @@ export const useEditorStore = create<EditorState>((set) => ({
   dragging: false,
   eraserMode: false,
   teleportMode: false,
+  placeDoorMode: false,
+  viewDoorsMode: false,
+  freeCamActive: false,
+  placedDoors: loadSavedDoors(),
+  selectedDoorId: null,
+  doorTransformMode: null,
+  doorViewStyle: 'xray' as const,
   cameraMode: 'follow',
   objects: {},
   dynamicObjects: [...savedDynamicObjects],
@@ -77,6 +104,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       enabled: !s.enabled,
       selectedId: null,
       eraserMode: false,
+      viewDoorsMode: false,
     })),
   select: (id) => set({ selectedId: id }),
   setMode: (mode) => set({ mode }),
@@ -85,6 +113,60 @@ export const useEditorStore = create<EditorState>((set) => ({
     set({ eraserMode: mode, selectedId: null }),
   setTeleportMode: (mode) =>
     set({ teleportMode: mode, selectedId: null }),
+  setPlaceDoorMode: (mode) =>
+    set({ placeDoorMode: mode, selectedId: null }),
+  setFreeCamActive: (v) => set({ freeCamActive: v }),
+  setViewDoorsMode: (mode) =>
+    set({ viewDoorsMode: mode, ...(mode ? { cameraMode: 'free' } : {}) }),
+  setDoorTransformMode: (mode) => set({ doorTransformMode: mode }),
+  setDoorViewStyle: (style) => set({ doorViewStyle: style }),
+  selectDoor: (id) => set({ selectedDoorId: id, doorTransformMode: null }),
+  addDoor: (door) =>
+    set((s) => {
+      const next = [...s.placedDoors, door]
+      persistDoors(next)
+      return { placedDoors: next }
+    }),
+  removeDoor: (id) =>
+    set((s) => {
+      const next = s.placedDoors.filter((d) => d.id !== id)
+      persistDoors(next)
+      return { placedDoors: next }
+    }),
+  flipDoor: (id) =>
+    set((s) => {
+      const next = s.placedDoors.map((d) =>
+        d.id === id ? { ...d, nx: -d.nx, nz: -d.nz } : d,
+      )
+      persistDoors(next)
+      return { placedDoors: next }
+    }),
+  updateDoor: (id, partial) =>
+    set((s) => {
+      const next = s.placedDoors.map((d) => (d.id === id ? { ...d, ...partial } : d))
+      persistDoors(next)
+      return { placedDoors: next }
+    }),
+  rotateDoor: (id, delta) =>
+    set((s) => {
+      const next = s.placedDoors.map((d) => {
+        if (d.id !== id) return d
+        const angle = Math.atan2(d.nx, d.nz) + delta
+        return {
+          ...d,
+          nx: parseFloat(Math.sin(angle).toFixed(3)),
+          nz: parseFloat(Math.cos(angle).toFixed(3)),
+        }
+      })
+      persistDoors(next)
+      return { placedDoors: next }
+    }),
+  renameDoor: (id, name) =>
+    set((s) => {
+      const next = s.placedDoors.map((d) => (d.id === id ? { ...d, name } : d))
+      persistDoors(next)
+      return { placedDoors: next }
+    }),
   setCameraMode: (cameraMode) => set({ cameraMode }),
   register: (obj) =>
     set((s) => ({

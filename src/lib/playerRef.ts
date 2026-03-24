@@ -11,3 +11,6 @@ export const teleportTarget: { current: { x: number; y: number; z: number } | nu
 
 /** Toggled by DoorTriggers when player crosses a door — read by CameraRig. */
 export const isIndoorsRef: { current: boolean } = { current: false }
+
+/** Set by door list / 3D disc click — consumed by EditorCamera FreeOrbitView. */
+export const freeCameraJumpTarget: { current: { x: number; y: number; z: number } | null } = { current: null }
