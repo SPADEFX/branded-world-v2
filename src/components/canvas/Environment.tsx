@@ -5,7 +5,7 @@ import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh'
-import { testMapScene, visualMeshes, fadeScenesRef, buildingScenesRef } from '@/lib/testMapRef'
+import { testMapScene, visualMeshes, fadeScenesRef, buildingScenesRef, buildingClipPlane } from '@/lib/testMapRef'
 import { cliffMaterial, isCliff } from '@/lib/cliffMaterial'
 import { autoInstance, mergeByMaterial } from '@/lib/autoInstance'
 import { waterfallStreamMaterial, waterfallPoolMaterial, waterfallUniforms } from '@/lib/waterfallMaterial'
@@ -175,6 +175,18 @@ export function Environment() {
     })
     autoInstance(buildings)
     buildBVH(buildings)
+
+    // Apply shared clip plane to every building material
+    buildings.traverse((child) => {
+      const mesh = child as THREE.Mesh
+      if (!mesh.isMesh) return
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      for (const mat of mats) {
+        (mat as THREE.Material).clippingPlanes = [buildingClipPlane]
+        ;(mat as THREE.Material).clipShadows = false
+      }
+    })
+
     testMapScene.current = [...testMapScene.current.filter((s) => s !== buildings), buildings]
     buildingScenesRef.current = [buildings]
 

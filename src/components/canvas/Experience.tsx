@@ -73,6 +73,7 @@ export function Experience() {
         toneMapping: THREE.ACESFilmicToneMapping,
         toneMappingExposure: 1.4,
         powerPreference: 'high-performance',
+        localClippingEnabled: true,
       }}
       dpr={Math.min(window.devicePixelRatio, 1.5)}
       camera={{ fov: 45, near: 0.1, far: 200, position: [0, 10, 28] }}

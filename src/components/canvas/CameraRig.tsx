@@ -6,7 +6,7 @@ import * as THREE from 'three'
 import { useGameStore } from '@/stores/gameStore'
 import { useEditorStore } from '@/stores/editorStore'
 import { playerPosition, cameraInput, npcPositions } from '@/lib/playerRef'
-import { fadeScenesRef, buildingScenesRef, testMapScene } from '@/lib/testMapRef'
+import { fadeScenesRef, testMapScene, buildingClipPlane } from '@/lib/testMapRef'
 
 const CAM_DISTANCE_DEFAULT = 8
 const CAM_DISTANCE_MIN = 3
@@ -154,10 +154,11 @@ export function CameraRig() {
       return hits.length > 0
     })()
 
-    // ── Obstruction fade: env always + buildings when indoors ──
-    const scenes = isIndoors
-      ? [...fadeScenesRef.current, ...buildingScenesRef.current]
-      : fadeScenesRef.current
+    // Update building clip plane: cut above player+2.5 when indoors, disabled outside
+    buildingClipPlane.constant = isIndoors ? playerPosition.y + 2.5 : 1e9
+
+    // ── Obstruction fade: env only (buildings handled by clip plane) ──
+    const scenes = fadeScenesRef.current
     const currentlyFaded = new Set<THREE.Mesh>()
 
     if (scenes.length) {
