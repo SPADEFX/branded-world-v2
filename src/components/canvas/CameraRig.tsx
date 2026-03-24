@@ -21,6 +21,8 @@ const CAM_PITCH_MIN = -0.5
 const CAM_PITCH_MAX = 0.8
 const INDOOR_CEIL_CHECK = 5
 const INDOOR_BLEND_SPEED = 5
+const FOV_OUTDOOR = 45
+const FOV_INDOOR = 80
 
 const DIALOGUE_CAM_HEIGHT = 2.2
 const DIALOGUE_CAM_SIDE = 2.5
@@ -149,6 +151,13 @@ export function CameraRig() {
       1 - Math.exp(-INDOOR_BLEND_SPEED * dt),
     )
     const blend = indoorBlend.current
+
+    const targetFov = THREE.MathUtils.lerp(FOV_OUTDOOR, FOV_INDOOR, blend)
+    const cam = camera as THREE.PerspectiveCamera
+    if (Math.abs(cam.fov - targetFov) > 0.05) {
+      cam.fov = targetFov
+      cam.updateProjectionMatrix()
+    }
 
     // ── First-person target (eye position looking forward) ──
     const fpEyeX = x
