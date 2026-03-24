@@ -8,3 +8,6 @@ export const visualMeshes: { current: THREE.Mesh[] } = { current: [] }
 
 /** Scenes used for camera obstruction fade — env only, NOT buildings (avoids transparent interiors). */
 export const fadeScenesRef: { current: THREE.Object3D[] } = { current: [] }
+
+/** Buildings scene only — used by CameraRig for indoor wall fade. */
+export const buildingScenesRef: { current: THREE.Object3D[] } = { current: [] }
