@@ -6,7 +6,7 @@ import * as THREE from 'three'
 import { useGameStore } from '@/stores/gameStore'
 import { useEditorStore } from '@/stores/editorStore'
 import { playerPosition, cameraInput, npcPositions } from '@/lib/playerRef'
-import { testMapScene } from '@/lib/testMapRef'
+import { fadeScenesRef } from '@/lib/testMapRef'
 
 const CAM_DISTANCE_DEFAULT = 8
 const CAM_DISTANCE_MIN = 3
@@ -142,7 +142,7 @@ export function CameraRig() {
     const idealCamPos = new THREE.Vector3(camX, smoothY.current + CAM_HEIGHT + vOffset, camZ)
 
     // ── Obstruction fade: raycast from player toward camera, fade blocking meshes ──
-    const scenes = testMapScene.current
+    const scenes = fadeScenesRef.current
     const currentlyFaded = new Set<THREE.Mesh>()
 
     if (scenes.length) {

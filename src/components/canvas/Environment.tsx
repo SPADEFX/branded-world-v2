@@ -5,7 +5,7 @@ import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh'
-import { testMapScene, visualMeshes } from '@/lib/testMapRef'
+import { testMapScene, visualMeshes, fadeScenesRef } from '@/lib/testMapRef'
 import { cliffMaterial, isCliff } from '@/lib/cliffMaterial'
 import { autoInstance, mergeByMaterial } from '@/lib/autoInstance'
 import { waterfallStreamMaterial, waterfallPoolMaterial, waterfallUniforms } from '@/lib/waterfallMaterial'
@@ -147,10 +147,12 @@ export function Environment() {
 
     buildBVH(env)
     testMapScene.current = [env]
+    fadeScenesRef.current = [env]
     visualMeshes.current = remaining.filter((m) => !isCollisionMesh(m.name) && !isWaterPlane(m.name))
 
     return () => {
       testMapScene.current = []
+      fadeScenesRef.current = []
       visualMeshes.current = []
     }
   }, [env, terrain])
