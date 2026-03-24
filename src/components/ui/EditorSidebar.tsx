@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useEditorStore } from '@/stores/editorStore'
 import { HitboxEditor } from './HitboxEditor'
 import { saveEditorState } from '@/config/editorPersistence'
-import { playerPosition } from '@/lib/playerRef'
+import { playerPosition, playerRotation } from '@/lib/playerRef'
 import { clearAllHitboxes } from '@/lib/hitboxes'
 import { HITBOX_OVERRIDES } from '@/config/hitboxOverrides'
 
@@ -42,10 +42,13 @@ export function EditorSidebar() {
 
   const handleAddDoor = () => {
     const { x, z } = playerPosition
-    const entry = `{ id: 'door_${Date.now()}', x: ${x.toFixed(2)}, z: ${z.toFixed(2)}, radius: 1.5 },`
+    const angle = playerRotation.y
+    const nx = parseFloat(Math.sin(angle).toFixed(3))
+    const nz = parseFloat(Math.cos(angle).toFixed(3))
+    const entry = `{ id: 'door_${Date.now()}', x: ${x.toFixed(2)}, z: ${z.toFixed(2)}, radius: 1.5, nx: ${nx}, nz: ${nz} },`
     console.log('[Door Trigger]', entry)
     navigator.clipboard.writeText(entry)
-    alert(`Copied to clipboard:\n${entry}`)
+    alert(`Copié !\n\n${entry}\n\nColle dans src/config/indoorZones.ts`)
   }
 
   const handleResetHitboxes = () => {

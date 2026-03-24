@@ -3,18 +3,23 @@ export interface DoorTrigger {
   x: number
   z: number
   radius: number
+  /** Unit vector pointing INTO the building — set when placing by facing inward */
+  nx: number
+  nz: number
 }
 
 /**
- * Door triggers — walking into the radius toggles indoor/outdoor state.
- * Same trigger is used for entry AND exit (boolean toggle).
+ * Door triggers for indoor/outdoor camera state.
  *
- * To add a door:
- *   1. Enable Editor → click "Add Door" button
- *   2. Walk your player to the doorway
- *   3. The coords are printed to console — copy them here
+ * HOW TO PLACE A DOOR:
+ *   1. Editor ON → walk to the doorway
+ *   2. Face INTO the building (player looks inward)
+ *   3. Click "Add Door Here" → line is copied to clipboard
+ *   4. Paste it here in the DOOR_TRIGGERS array
+ *
+ * The trigger uses dot-product detection — no toggle, no desync.
+ * Grazing and turning back leaves state unchanged.
  */
 export const DOOR_TRIGGERS: DoorTrigger[] = [
-  // Example (replace with real coords):
-  // { id: 'castle_main_door', x: 12.5, z: -8.3, radius: 1.5 },
+  // { id: 'door_1234', x: 22.75, z: 19.10, radius: 1.5, nx: 0.00, nz: -1.00 },
 ]
