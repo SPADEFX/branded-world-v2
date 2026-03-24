@@ -13,9 +13,6 @@ const CAM_DISTANCE_MIN = 3
 const CAM_DISTANCE_MAX = 20
 const CAM_HEIGHT = 4
 const LOOK_HEIGHT = 1.9
-const FOV_DEFAULT = 45
-const FOV_INDOOR = 68
-const CAM_DISTANCE_INDOOR = 3
 const INDOOR_CEIL_CHECK = 5  // max ceiling height to consider "indoors"
 const POSITION_DAMPING = 6
 const CAM_TURN_SPEED = 1.5
@@ -39,14 +36,9 @@ export function CameraRig() {
   const tmpLook = useRef(new THREE.Vector3())
   const smoothY = useRef(0)
   const camRaycaster = useRef(new THREE.Raycaster())
-  const collRaycaster = useRef(new THREE.Raycaster())
   const camDir = useRef(new THREE.Vector3())
-  const smoothCollDist = useRef(CAM_DISTANCE_DEFAULT)
   const indoorRaycaster = useRef(new THREE.Raycaster())
-  const smoothFov = useRef(FOV_DEFAULT)
-  const smoothIndoorDist = useRef(CAM_DISTANCE_DEFAULT)
   const _up = new THREE.Vector3(0, 1, 0)
-  const _toCamera = new THREE.Vector3()
   const fadedMeshes = useRef<Map<THREE.Mesh, { origMaterial: THREE.MeshStandardMaterial; origOpacity: number; origTransparent: boolean }>>(new Map())
 
   // Scroll → zoom
@@ -161,38 +153,6 @@ export function CameraRig() {
       const hits = indoorRaycaster.current.intersectObjects(scenes, true)
       return hits.length > 0
     })()
-
-    const targetFov = isIndoors ? FOV_INDOOR : FOV_DEFAULT
-    const targetIndoorDist = isIndoors ? CAM_DISTANCE_INDOOR : camDistance.current
-    const transSpeed = 6
-    smoothFov.current = THREE.MathUtils.lerp(smoothFov.current, targetFov, 1 - Math.exp(-transSpeed * dt))
-    smoothIndoorDist.current = THREE.MathUtils.lerp(smoothIndoorDist.current, targetIndoorDist, 1 - Math.exp(-transSpeed * dt))
-
-    const camFov = camera as THREE.PerspectiveCamera
-    if (Math.abs(camFov.fov - smoothFov.current) > 0.05) {
-      camFov.fov = smoothFov.current
-      camFov.updateProjectionMatrix()
-    }
-
-    // ── Camera collision: smooth pull-in when geometry blocks the view ──
-    _toCamera.subVectors(idealCamPos, lookAt)
-    _toCamera.normalize()
-    const userDist = smoothIndoorDist.current
-
-    let maxDist = userDist
-    idealCamPos.copy(lookAt).addScaledVector(_toCamera, userDist)
-    const allScenes = testMapScene.current
-    if (allScenes.length) {
-      collRaycaster.current.set(lookAt, _toCamera)
-      collRaycaster.current.far = userDist
-      const hits = collRaycaster.current.intersectObjects(allScenes, true)
-      if (hits.length > 0) maxDist = Math.max(0.5, hits[0].distance - 0.2)
-    }
-
-    // Fast pull-in, slow recovery
-    const pullSpeed = maxDist < smoothCollDist.current ? 14 : 4
-    smoothCollDist.current = THREE.MathUtils.lerp(smoothCollDist.current, maxDist, 1 - Math.exp(-pullSpeed * dt))
-    idealCamPos.copy(lookAt).addScaledVector(_toCamera, smoothCollDist.current)
 
     // ── Obstruction fade: env always + buildings when indoors ──
     const scenes = isIndoors
