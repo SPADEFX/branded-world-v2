@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import * as THREE from 'three'
 import { savedHiddenIds, savedDynamicObjects } from '@/config/editorPersistence'
 import { type DoorTrigger, loadSavedDoors, persistDoors } from '@/config/indoorZones'
+import { type PropCollection } from '@/lib/testMapRef'
 
 export interface EditorObject {
   id: string
@@ -51,8 +52,10 @@ interface EditorState {
   setCollisionManagerOpen: (v: boolean) => void
   propViewerOpen: boolean
   propViewerIndex: number
+  propViewerCollection: PropCollection
   setPropViewerOpen: (v: boolean) => void
   setPropViewerIndex: (v: number) => void
+  setPropViewerCollection: (c: PropCollection) => void
   setViewDoorsMode: (mode: boolean) => void
   setDoorTransformMode: (mode: 'grab' | 'rotate' | 'scale' | null) => void
   setDoorViewStyle: (style: 'xray' | 'full' | 'wireframe') => void
@@ -102,6 +105,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   collisionManagerOpen: false,
   propViewerOpen: false,
   propViewerIndex: 0,
+  propViewerCollection: 'detailmisc' as PropCollection,
   placedDoors: loadSavedDoors(),
   selectedDoorId: null,
   doorTransformMode: null,
@@ -132,6 +136,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   setCollisionManagerOpen: (v) => set({ collisionManagerOpen: v }),
   setPropViewerOpen: (v) => set({ propViewerOpen: v }),
   setPropViewerIndex: (v) => set({ propViewerIndex: v }),
+  setPropViewerCollection: (c) => set({ propViewerCollection: c, propViewerIndex: 0 }),
   setViewDoorsMode: (mode) =>
     set({ viewDoorsMode: mode, ...(mode ? { cameraMode: 'free' } : {}) }),
   setDoorTransformMode: (mode) => set({ doorTransformMode: mode }),

@@ -13,8 +13,12 @@ export interface PropInfo {
   instanceCount: number
 }
 
-export const propRegistry: { detailmisc: PropInfo[] } = {
+export type PropCollection = 'detailmisc' | 'misc' | 'setdress'
+
+export const propRegistry: Record<PropCollection, PropInfo[]> = {
   detailmisc: [],
+  misc: [],
+  setdress: [],
 }
 
 /** Pre-cached list of non-instanced visual meshes — used by DistanceCuller. */

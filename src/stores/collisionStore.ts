@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 const STORAGE_KEY = 'detailmisc-collision-v1'
+const HIDDEN_KEY  = 'prop-hidden-v1'
 
 function load(): Set<string> {
   if (typeof window === 'undefined') return new Set()
@@ -15,12 +16,27 @@ function save(names: Set<string>) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify([...names]))
 }
 
+function loadHidden(): Set<string> {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    const raw = localStorage.getItem(HIDDEN_KEY)
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set()
+  } catch { return new Set() }
+}
+
+function saveHidden(names: Set<string>) {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(HIDDEN_KEY, JSON.stringify([...names]))
+}
+
 interface CollisionState {
   enabledNames: Set<string>
   version: number
   toggle: (name: string) => void
   enableAll: () => void
   disableAll: () => void
+  hiddenNames: Set<string>
+  toggleHidden: (name: string) => void
 }
 
 export const useCollisionStore = create<CollisionState>((set, get) => ({
@@ -43,5 +59,14 @@ export const useCollisionStore = create<CollisionState>((set, get) => ({
     set(() => {
       save(new Set())
       return { enabledNames: new Set(), version: get().version + 1 }
+    }),
+  hiddenNames: loadHidden(),
+  toggleHidden: (name) =>
+    set((s) => {
+      const next = new Set(s.hiddenNames)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      saveHidden(next)
+      return { hiddenNames: next }
     }),
 }))

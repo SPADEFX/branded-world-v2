@@ -26,9 +26,9 @@ function getFirstInstanceWorldPos(inst: THREE.InstancedMesh): THREE.Vector3 {
 }
 
 export function PropViewerHighlight() {
-  const propViewerOpen   = useEditorStore((s) => s.propViewerOpen)
-  const propViewerIndex  = useEditorStore((s) => s.propViewerIndex)
-  const setPropViewerIndex = useEditorStore((s) => s.setPropViewerIndex)
+  const propViewerOpen       = useEditorStore((s) => s.propViewerOpen)
+  const propViewerIndex      = useEditorStore((s) => s.propViewerIndex)
+  const setPropViewerIndex   = useEditorStore((s) => s.setPropViewerIndex)
 
   const { camera, scene } = useThree()
   const hlRef    = useRef<THREE.InstancedMesh | THREE.Mesh | null>(null)
@@ -46,7 +46,8 @@ export function PropViewerHighlight() {
   // Register flyTo — available to HUD buttons
   useEffect(() => {
     propViewerFlyTo.current = (index: number) => {
-      const info = propRegistry.detailmisc[index]
+      const collection = useEditorStore.getState().propViewerCollection
+      const info = propRegistry[collection][index]
       if (!info) return
 
       let tx = 0, ty = 0, tz = 0
@@ -107,10 +108,18 @@ export function PropViewerHighlight() {
     }
     if (!propViewerOpen) return
 
-    const info = propRegistry.detailmisc[propViewerIndex]
+    const collection = useEditorStore.getState().propViewerCollection
+    const info = propRegistry[collection][propViewerIndex]
     if (!info) return
 
     const sm = info.sceneMesh
+
+    // For non-instanced meshes (setdress) force visible so highlight + flyTo work
+    let wasVisible = true
+    if (!(sm as THREE.InstancedMesh).isInstancedMesh) {
+      wasVisible = (sm as THREE.Mesh).visible
+      ;(sm as THREE.Mesh).visible = true
+    }
 
     if ((sm as THREE.InstancedMesh).isInstancedMesh) {
       const orig = sm as THREE.InstancedMesh
@@ -122,7 +131,6 @@ export function PropViewerHighlight() {
         hl.setMatrixAt(i, mat)
       }
       hl.instanceMatrix.needsUpdate = true
-      // Match world transform of original (should be identity since orig is direct child of scene)
       hl.matrixWorld.copy(orig.matrixWorld)
       hl.matrixAutoUpdate = false
       scene.add(hl)
@@ -144,6 +152,10 @@ export function PropViewerHighlight() {
       if (hlRef.current) {
         scene.remove(hlRef.current)
         hlRef.current = null
+      }
+      // Restore original visibility for non-instanced meshes
+      if (!(sm as THREE.InstancedMesh).isInstancedMesh) {
+        ;(sm as THREE.Mesh).visible = wasVisible
       }
     }
   }, [propViewerIndex, propViewerOpen, scene])

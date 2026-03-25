@@ -215,9 +215,29 @@ export function Environment() {
     setDressMeshes.current = meshes
     testMapScene.current = [...testMapScene.current.filter((s) => s !== setdress), setdress]
 
+    // Populate propRegistry.setdress — deduplicate by baseName
+    const seenSd = new Set<string>()
+    const sdProps: PropInfo[] = []
+    for (const mesh of meshes) {
+      const baseName = mesh.name.replace(/\.\d+$/, '')
+      if (seenSd.has(baseName)) continue
+      seenSd.add(baseName)
+      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox()
+      const bb = mesh.geometry.boundingBox
+      const h = bb ? (bb.max.y - bb.min.y) * Math.abs(mesh.scale.y) : 1
+      const instanceCount = meshes.filter((m) => m.name.replace(/\.\d+$/, '') === baseName).length
+      sdProps.push({ baseName, mesh, sceneMesh: mesh, height: h, glbFile: 'setdress.glb', instanceCount })
+    }
+    propRegistry.setdress = sdProps.sort((a, b) => a.baseName.localeCompare(b.baseName))
+    const { hiddenNames: hiddenSd } = useCollisionStore.getState()
+    for (const p of propRegistry.setdress) {
+      if (hiddenSd.has(p.baseName)) p.sceneMesh.visible = false
+    }
+
     return () => {
       setDressMeshes.current = []
       testMapScene.current = testMapScene.current.filter((s) => s !== setdress)
+      propRegistry.setdress = []
     }
   }, [setdress])
 
@@ -275,6 +295,10 @@ export function Environment() {
     }
 
     propRegistry.detailmisc = props.sort((a, b) => a.baseName.localeCompare(b.baseName))
+    const { hiddenNames: hiddenDm } = useCollisionStore.getState()
+    for (const p of propRegistry.detailmisc) {
+      if (hiddenDm.has(p.baseName)) p.sceneMesh.visible = false
+    }
 
     return () => {
       detailMiscMeshes.current = []
@@ -360,12 +384,42 @@ export function Environment() {
         m.emissiveIntensity = 0
       }
     })
-    autoInstance(misc)
+    const remaining = autoInstance(misc)
     buildBVH(misc)
     testMapScene.current = [...testMapScene.current.filter((s) => s !== misc), misc]
 
+    // Populate propRegistry.misc after autoInstance
+    const seen = new Set<string>()
+    const props: PropInfo[] = []
+    misc.traverse((child) => {
+      const inst = child as THREE.InstancedMesh
+      if (!inst.isInstancedMesh) return
+      const baseName = inst.name.replace(/\.\d+$/, '')
+      if (seen.has(baseName)) return
+      seen.add(baseName)
+      const mat = Array.isArray(inst.material) ? inst.material[0] : inst.material
+      const proxy = new THREE.Mesh(inst.geometry, mat)
+      if (!inst.geometry.boundingBox) inst.geometry.computeBoundingBox()
+      const bb = inst.geometry.boundingBox
+      props.push({ baseName, mesh: proxy, sceneMesh: inst, height: bb ? bb.max.y - bb.min.y : 1, glbFile: 'Globalmisc.glb', instanceCount: inst.count })
+    })
+    for (const mesh of remaining) {
+      const baseName = mesh.name.replace(/\.\d+$/, '')
+      if (seen.has(baseName)) continue
+      seen.add(baseName)
+      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox()
+      const bb = mesh.geometry.boundingBox
+      props.push({ baseName, mesh, sceneMesh: mesh, height: bb ? (bb.max.y - bb.min.y) * Math.abs(mesh.scale.y) : 1, glbFile: 'Globalmisc.glb', instanceCount: 1 })
+    }
+    propRegistry.misc = props.sort((a, b) => a.baseName.localeCompare(b.baseName))
+    const { hiddenNames: hiddenMisc } = useCollisionStore.getState()
+    for (const p of propRegistry.misc) {
+      if (hiddenMisc.has(p.baseName)) p.sceneMesh.visible = false
+    }
+
     return () => {
       testMapScene.current = testMapScene.current.filter((s) => s !== misc)
+      propRegistry.misc = []
     }
   }, [misc])
 

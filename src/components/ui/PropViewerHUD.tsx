@@ -4,10 +4,16 @@ import { useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useEditorStore } from '@/stores/editorStore'
 import { useCollisionStore } from '@/stores/collisionStore'
-import { propRegistry } from '@/lib/testMapRef'
+import { propRegistry, type PropCollection } from '@/lib/testMapRef'
 import { propViewerFlyTo } from '@/lib/propViewerRef'
 
 const PLAYER_HEIGHT = 1.8
+
+const COLLECTIONS: { id: PropCollection; label: string }[] = [
+  { id: 'detailmisc', label: 'Détail' },
+  { id: 'misc',       label: 'Misc' },
+  { id: 'setdress',   label: 'Intérieur' },
+]
 
 function getSizeBadge(height: number) {
   const ratio = height / PLAYER_HEIGHT
@@ -42,12 +48,20 @@ function NavBtn({
 }
 
 export function PropViewerHUD() {
-  const propViewerOpen    = useEditorStore((s) => s.propViewerOpen)
-  const propViewerIndex   = useEditorStore((s) => s.propViewerIndex)
-  const { enabledNames, toggle } = useCollisionStore()
+  const propViewerOpen       = useEditorStore((s) => s.propViewerOpen)
+  const propViewerIndex      = useEditorStore((s) => s.propViewerIndex)
+  const propViewerCollection = useEditorStore((s) => s.propViewerCollection)
+  const setPropViewerCollection = useEditorStore((s) => s.setPropViewerCollection)
+  const { enabledNames, toggle, hiddenNames, toggleHidden } = useCollisionStore()
 
-  const total = propRegistry.detailmisc.length
-  const info  = propRegistry.detailmisc[propViewerIndex]
+  const collectionProps = propRegistry[propViewerCollection]
+  const total = collectionProps.length
+  const info  = collectionProps[propViewerIndex]
+
+  // Fixed width — computed from longest name in current collection, never changes while browsing
+  const fixedWidth = collectionProps.length
+    ? Math.max(240, Math.max(...collectionProps.map((p) => p.baseName.length)) * 7.6 + 64)
+    : 260
 
   const navigate = useCallback((delta: number) => {
     if (!propViewerFlyTo.current || total === 0) return
@@ -73,7 +87,7 @@ export function PropViewerHUD() {
           transition={{ duration: 0.18, ease: 'easeOut' }}
           style={{
             position: 'fixed',
-            bottom: 108,   // above BottomNav
+            bottom: 108,
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 40,
@@ -84,6 +98,31 @@ export function PropViewerHUD() {
             gap: 8,
           }}
         >
+          {/* Collection selector */}
+          <div style={{ ...barStyle, display: 'flex', alignItems: 'center', gap: 4, padding: '6px 10px' }}>
+            {COLLECTIONS.map((col) => {
+              const active = propViewerCollection === col.id
+              return (
+                <button
+                  key={col.id}
+                  onClick={() => setPropViewerCollection(col.id)}
+                  style={{
+                    padding: '4px 14px',
+                    borderRadius: 8,
+                    border: active ? '1px solid rgba(160,110,40,0.6)' : '1px solid transparent',
+                    background: active ? 'rgba(160,110,40,0.18)' : 'transparent',
+                    color: active ? 'rgba(255,200,80,0.95)' : 'rgba(255,255,255,0.35)',
+                    fontSize: 11, fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.12s',
+                  }}
+                >
+                  {col.label}
+                </button>
+              )
+            })}
+          </div>
+
           {/* Navigation row */}
           <div style={{ ...barStyle, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px' }}>
 
@@ -92,8 +131,8 @@ export function PropViewerHUD() {
             {/* ◀ -1 */}
             <NavBtn label="◀" onClick={() => navigate(-1)} disabled={propViewerIndex === 0} />
 
-            {/* Center info */}
-            <div style={{ minWidth: 260, textAlign: 'center', padding: '0 10px' }}>
+            {/* Center info — fixed width based on longest name, no layout shift while navigating */}
+            <div style={{ width: fixedWidth, textAlign: 'center', padding: '0 10px', flexShrink: 0 }}>
               {info ? (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 2 }}>
@@ -134,29 +173,57 @@ export function PropViewerHUD() {
             <NavBtn label="▶▶" onClick={() => navigate(10)} disabled={propViewerIndex >= total - 1} />
           </div>
 
-          {/* Collision toggle button */}
+          {/* Action buttons row */}
           {info && (() => {
             const enabled = enabledNames.has(info.baseName)
+            const hidden  = hiddenNames.has(info.baseName)
             return (
-              <motion.button
-                key={info.baseName}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => toggle(info.baseName)}
-                style={{
-                  ...barStyle,
-                  padding: '9px 28px',
-                  fontSize: 12, fontWeight: 700,
-                  cursor: 'pointer',
-                  color: enabled ? '#22c55e' : 'rgba(255,255,255,0.4)',
-                  borderColor: enabled ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.1)',
-                  background: enabled
-                    ? 'linear-gradient(180deg, rgba(34,197,94,0.12) 0%, rgba(20,120,56,0.1) 100%)'
-                    : 'linear-gradient(180deg, rgba(30,18,6,0.97) 0%, rgba(16,9,2,0.99) 100%)',
-                  transition: 'color 0.15s, border-color 0.15s, background 0.15s',
-                }}
-              >
-                {enabled ? '✓ Collision active' : 'Activer la collision'}
-              </motion.button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {/* Collision toggle */}
+                <motion.button
+                  key={`col-${info.baseName}`}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => toggle(info.baseName)}
+                  style={{
+                    ...barStyle,
+                    padding: '9px 22px',
+                    fontSize: 12, fontWeight: 700,
+                    cursor: 'pointer',
+                    color: enabled ? '#22c55e' : 'rgba(255,255,255,0.4)',
+                    borderColor: enabled ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.1)',
+                    background: enabled
+                      ? 'linear-gradient(180deg, rgba(34,197,94,0.12) 0%, rgba(20,120,56,0.1) 100%)'
+                      : 'linear-gradient(180deg, rgba(30,18,6,0.97) 0%, rgba(16,9,2,0.99) 100%)',
+                    transition: 'color 0.15s, border-color 0.15s, background 0.15s',
+                  }}
+                >
+                  {enabled ? '✓ Collision active' : 'Activer la collision'}
+                </motion.button>
+
+                {/* Hide toggle */}
+                <motion.button
+                  key={`hide-${info.baseName}`}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => {
+                    toggleHidden(info.baseName)
+                    info.sceneMesh.visible = hidden  // hidden=true → now showing → visible=true
+                  }}
+                  style={{
+                    ...barStyle,
+                    padding: '9px 22px',
+                    fontSize: 12, fontWeight: 700,
+                    cursor: 'pointer',
+                    color: hidden ? '#ef4444' : 'rgba(255,255,255,0.4)',
+                    borderColor: hidden ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)',
+                    background: hidden
+                      ? 'linear-gradient(180deg, rgba(239,68,68,0.12) 0%, rgba(150,30,30,0.1) 100%)'
+                      : 'linear-gradient(180deg, rgba(30,18,6,0.97) 0%, rgba(16,9,2,0.99) 100%)',
+                    transition: 'color 0.15s, border-color 0.15s, background 0.15s',
+                  }}
+                >
+                  {hidden ? '✗ Masqué' : 'Masquer'}
+                </motion.button>
+              </div>
             )
           })()}
         </motion.div>
