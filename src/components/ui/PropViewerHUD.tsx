@@ -87,9 +87,9 @@ export function PropViewerHUD() {
           transition={{ duration: 0.18, ease: 'easeOut' }}
           style={{
             position: 'fixed',
-            bottom: 108,
+            bottom: 140,
             left: '50%',
-            transform: 'translateX(-50%)',
+            x: '-50%',
             zIndex: 40,
             pointerEvents: 'auto',
             display: 'flex',
