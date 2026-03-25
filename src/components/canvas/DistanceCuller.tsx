@@ -13,8 +13,10 @@ const CHECK_INTERVAL = 10
 
 const _playerVec = new THREE.Vector3()
 const _meshVec = new THREE.Vector3()
-const _mat4 = new THREE.Matrix4()
-const _ipos = new THREE.Vector3()
+
+// Per-instance culling state — cached original matrices + visibility flags
+const _origMatrices  = new Map<THREE.InstancedMesh, Float32Array>()
+const _instVisible   = new Map<THREE.InstancedMesh, Uint8Array>()
 
 export function DistanceCuller() {
   const frameCount = useRef(0)
@@ -40,16 +42,38 @@ export function DistanceCuller() {
       mesh.visible = _playerVec.distanceToSquared(_meshVec) < DETAILMISC_DIST_SQ
     }
 
+    // Per-instance culling: zero-scale instances beyond range, restore when near
     for (const inst of detailMiscInstancedMeshes.current) {
-      let nearest = Infinity
-      for (let i = 0; i < inst.count; i++) {
-        inst.getMatrixAt(i, _mat4)
-        _ipos.setFromMatrixPosition(_mat4)
-        const d = _playerVec.distanceToSquared(_ipos)
-        if (d < nearest) nearest = d
-        if (nearest < DETAILMISC_DIST_SQ) break
+      if (!_origMatrices.has(inst)) {
+        _origMatrices.set(inst, (inst.instanceMatrix.array as Float32Array).slice())
+        _instVisible.set(inst, new Uint8Array(inst.count).fill(1))
       }
-      inst.visible = nearest < DETAILMISC_DIST_SQ
+      const orig    = _origMatrices.get(inst)!
+      const wasVis  = _instVisible.get(inst)!
+      const arr     = inst.instanceMatrix.array as Float32Array
+      let changed   = false
+      let anyVis    = false
+
+      for (let i = 0; i < inst.count; i++) {
+        const o  = i * 16
+        const dx = _playerVec.x - orig[o + 12]
+        const dz = _playerVec.z - orig[o + 14]
+        const inRange = dx * dx + dz * dz < DETAILMISC_DIST_SQ
+
+        if (inRange && !wasVis[i]) {
+          arr.set(orig.subarray(o, o + 16), o)
+          wasVis[i] = 1
+          changed = true
+        } else if (!inRange && wasVis[i]) {
+          arr.fill(0, o, o + 16)
+          wasVis[i] = 0
+          changed = true
+        }
+        if (inRange) anyVis = true
+      }
+
+      inst.visible = anyVis
+      if (changed) inst.instanceMatrix.needsUpdate = true
     }
 
   })
