@@ -8,7 +8,8 @@ import { playerPosition } from '@/lib/playerRef'
 
 const CULL_DIST_SQ = 200 * 200
 const SETDRESS_DIST_SQ = 15 * 15
-const DETAILMISC_DIST_SQ = 20 * 20
+const DETAILMISC_SHOW_SQ = 19 * 19   // show when closer than this
+const DETAILMISC_HIDE_SQ = 22 * 22   // hide when farther than this
 const CHECK_INTERVAL = 10
 
 const _playerVec = new THREE.Vector3()
@@ -40,7 +41,7 @@ export function DistanceCuller() {
 
     for (const mesh of detailMiscMeshes.current) {
       mesh.getWorldPosition(_meshVec)
-      mesh.visible = _playerVec.distanceToSquared(_meshVec) < DETAILMISC_DIST_SQ
+      mesh.visible = _playerVec.distanceToSquared(_meshVec) < DETAILMISC_SHOW_SQ
     }
 
     // Per-instance culling: only re-run if player moved > 0.5u since last cull
@@ -63,18 +64,18 @@ export function DistanceCuller() {
         const o  = i * 16
         const dx = _playerVec.x - orig[o + 12]
         const dz = _playerVec.z - orig[o + 14]
-        const inRange = dx * dx + dz * dz < DETAILMISC_DIST_SQ
+        const d2 = dx * dx + dz * dz
 
-        if (inRange && !wasVis[i]) {
+        if (!wasVis[i] && d2 < DETAILMISC_SHOW_SQ) {
           arr.set(orig.subarray(o, o + 16), o)
           wasVis[i] = 1
           changed = true
-        } else if (!inRange && wasVis[i]) {
+        } else if (wasVis[i] && d2 > DETAILMISC_HIDE_SQ) {
           arr.fill(0, o, o + 16)
           wasVis[i] = 0
           changed = true
         }
-        if (inRange) anyVis = true
+        if (wasVis[i]) anyVis = true
       }
 
       inst.visible = anyVis
