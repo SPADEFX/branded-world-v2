@@ -36,3 +36,6 @@ export const setDressMeshes: { current: THREE.Mesh[] } = { current: [] }
 /** DetailMisc singleton meshes — culled at medium distance (30u) for performance. */
 export const detailMiscMeshes: { current: THREE.Mesh[] } = { current: [] }
 
+/** DetailMisc instanced meshes — culled at 30u (nearest instance check). */
+export const detailMiscInstancedMeshes: { current: THREE.InstancedMesh[] } = { current: [] }
+

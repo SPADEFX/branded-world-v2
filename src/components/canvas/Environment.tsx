@@ -5,7 +5,7 @@ import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh'
-import { testMapScene, visualMeshes, fadeScenesRef, buildingScenesRef, setDressMeshes, detailMiscMeshes, propRegistry, type PropInfo } from '@/lib/testMapRef'
+import { testMapScene, visualMeshes, fadeScenesRef, buildingScenesRef, setDressMeshes, detailMiscMeshes, detailMiscInstancedMeshes, propRegistry, type PropInfo } from '@/lib/testMapRef'
 import { cliffMaterial, isCliff } from '@/lib/cliffMaterial'
 import { autoInstance, mergeByMaterial } from '@/lib/autoInstance'
 import { waterfallStreamMaterial, waterfallPoolMaterial, waterfallUniforms } from '@/lib/waterfallMaterial'
@@ -259,6 +259,13 @@ export function Environment() {
     const remaining = autoInstance(detailmisc)
     detailMiscMeshes.current = remaining
 
+    const instanced: THREE.InstancedMesh[] = []
+    detailmisc.traverse((child) => {
+      if ((child as THREE.InstancedMesh).isInstancedMesh)
+        instanced.push(child as THREE.InstancedMesh)
+    })
+    detailMiscInstancedMeshes.current = instanced
+
     // Capture unique mesh info AFTER autoInstance — use InstancedMesh geometry+material
     // (guaranteed valid, actively used by the renderer) to generate thumbnails
     const seen = new Set<string>()
@@ -302,6 +309,7 @@ export function Environment() {
 
     return () => {
       detailMiscMeshes.current = []
+      detailMiscInstancedMeshes.current = []
       propRegistry.detailmisc = []
     }
   }, [detailmisc])
