@@ -8,7 +8,7 @@ import { playerPosition } from '@/lib/playerRef'
 
 const CULL_DIST_SQ = 200 * 200
 const SETDRESS_DIST_SQ = 15 * 15
-const DETAILMISC_DIST_SQ = 30 * 30
+const DETAILMISC_DIST_SQ = 20 * 20
 const CHECK_INTERVAL = 10
 
 const _playerVec = new THREE.Vector3()
@@ -17,6 +17,7 @@ const _meshVec = new THREE.Vector3()
 // Per-instance culling state — cached original matrices + visibility flags
 const _origMatrices  = new Map<THREE.InstancedMesh, Float32Array>()
 const _instVisible   = new Map<THREE.InstancedMesh, Uint8Array>()
+const _lastCullPos   = new THREE.Vector3(Infinity, 0, Infinity)
 
 export function DistanceCuller() {
   const frameCount = useRef(0)
@@ -42,8 +43,12 @@ export function DistanceCuller() {
       mesh.visible = _playerVec.distanceToSquared(_meshVec) < DETAILMISC_DIST_SQ
     }
 
-    // Per-instance culling: zero-scale instances beyond range, restore when near
+    // Per-instance culling: only re-run if player moved > 0.5u since last cull
+    const playerMoved = _playerVec.distanceToSquared(_lastCullPos) > 0.25
+    if (playerMoved) _lastCullPos.copy(_playerVec)
+
     for (const inst of detailMiscInstancedMeshes.current) {
+      if (!playerMoved && _origMatrices.has(inst)) continue
       if (!_origMatrices.has(inst)) {
         _origMatrices.set(inst, (inst.instanceMatrix.array as Float32Array).slice())
         _instVisible.set(inst, new Uint8Array(inst.count).fill(1))
