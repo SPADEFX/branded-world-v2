@@ -284,9 +284,9 @@ export function Player() {
     pos.x += walls.dx
     pos.z += walls.dz
 
-    const [rx, , rz] = resolveCollisions(pos.x, pos.y, pos.z, verticalVelocity.current)
-    pos.x = rx
-    pos.z = rz
+    const [hbX, , hbZ] = resolveCollisions(pos.x, pos.y, pos.z, verticalVelocity.current)
+    pos.x = hbX
+    pos.z = hbZ
 
     // ── Animation crossfade ──
     if (!isJumpingRef.current && isMoving !== isMovingRef.current) {
