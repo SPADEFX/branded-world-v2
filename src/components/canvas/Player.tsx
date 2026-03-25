@@ -8,6 +8,7 @@ import { useInput } from '@/hooks/useInput'
 import { useGameStore } from '@/stores/gameStore'
 import { playerPosition, playerRotation, cameraInput, npcPositions, teleportTarget } from '@/lib/playerRef'
 import { testMapScene } from '@/lib/testMapRef'
+import { resolveCollisions } from '@/lib/hitboxes'
 
 const MOVE_SPEED = 4
 const ACCELERATION = 10
@@ -282,6 +283,10 @@ export function Player() {
     const walls = resolveWalls(pos.x, pos.y, pos.z)
     pos.x += walls.dx
     pos.z += walls.dz
+
+    const [rx, , rz] = resolveCollisions(pos.x, pos.y, pos.z, verticalVelocity.current)
+    pos.x = rx
+    pos.z = rz
 
     // ── Animation crossfade ──
     if (!isJumpingRef.current && isMoving !== isMovingRef.current) {
