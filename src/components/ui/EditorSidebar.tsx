@@ -6,6 +6,7 @@ import { HitboxEditor } from './HitboxEditor'
 import { saveEditorState } from '@/config/editorPersistence'
 import { clearAllHitboxes } from '@/lib/hitboxes'
 import { HITBOX_OVERRIDES } from '@/config/hitboxOverrides'
+import { useCollisionStore } from '@/stores/collisionStore'
 import { exportDoorsToClipboard, type DoorTrigger } from '@/config/indoorZones'
 import { freeCameraJumpTarget } from '@/lib/playerRef'
 
@@ -157,7 +158,7 @@ export function EditorSidebar() {
     for (const key in HITBOX_OVERRIDES) delete HITBOX_OVERRIDES[key]
     localStorage.removeItem('hitbox-overrides')
     localStorage.removeItem('editor-state')
-    useEditorStore.getState().bumpHitboxVersion()
+    useCollisionStore.setState((s) => ({ version: s.version + 1 }))
   }
 
   const handleDoorRowClick = (door: DoorTrigger) => {
@@ -168,18 +169,6 @@ export function EditorSidebar() {
 
   return (
     <>
-      {/* Toggle — always visible */}
-      <button
-        onClick={toggle}
-        className={`pointer-events-auto absolute bottom-6 left-6 z-20 rounded-full px-4 py-2 text-xs font-medium backdrop-blur-md transition-colors ${
-          enabled
-            ? 'bg-indigo-500/80 text-white hover:bg-indigo-500'
-            : 'bg-black/30 text-white/70 hover:bg-black/50'
-        }`}
-      >
-        {enabled ? 'Editor ON' : 'Editor OFF'}
-      </button>
-
       {/* Sidebar */}
       {enabled && (
         <div className="pointer-events-auto absolute left-0 top-0 bottom-0 flex w-56 flex-col bg-black/60 backdrop-blur-xl text-white text-xs border-r border-white/10 overflow-hidden">

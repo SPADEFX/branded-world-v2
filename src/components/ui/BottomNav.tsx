@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useEditorStore } from '@/stores/editorStore'
+import { useMapBarrierStore } from '@/stores/mapBarrierStore'
 
 interface NavItem {
   id: string
@@ -34,6 +35,16 @@ const NAV_ITEMS: NavItem[] = [
       { id: 'place', icon: '＋', label: 'Placer' },
       { id: 'view', icon: '👁', label: 'Voir' },
     ],
+  },
+  {
+    id: 'barriers',
+    icon: '🧱',
+    label: 'Murs',
+  },
+  {
+    id: 'tp',
+    icon: '🔀',
+    label: 'TP',
   },
 ]
 
@@ -95,6 +106,10 @@ export function BottomNav() {
   const viewDoorsMode = useEditorStore((s) => s.viewDoorsMode)
   const setViewDoorsMode = useEditorStore((s) => s.setViewDoorsMode)
 
+  const barriersActive = useMapBarrierStore((s) => s.active)
+  const teleportMode = useEditorStore((s) => s.teleportMode)
+  const setTeleportMode = useEditorStore((s) => s.setTeleportMode)
+
   const doorsActive = placeDoorMode || viewDoorsMode
 
   function handleMain(id: string) {
@@ -111,6 +126,22 @@ export function BottomNav() {
       setOpenSub(openSub === 'camera' ? null : 'camera')
     } else if (id === 'doors') {
       setOpenSub(openSub === 'doors' ? null : 'doors')
+    } else if (id === 'barriers') {
+      const next = !useMapBarrierStore.getState().active
+      useMapBarrierStore.getState().setActive(next)
+      if (next) {
+        if (document.pointerLockElement) document.exitPointerLock()
+        setFreeCamActive(true)
+      }
+      setOpenSub(null)
+    } else if (id === 'tp') {
+      const next = !teleportMode
+      setTeleportMode(next)
+      if (next) {
+        if (document.pointerLockElement) document.exitPointerLock()
+        setFreeCamActive(true)
+      }
+      setOpenSub(null)
     }
   }
 
@@ -141,6 +172,8 @@ export function BottomNav() {
     if (id === 'collision') return propViewerOpen
     if (id === 'camera') return freeCamActive || cullingDebug
     if (id === 'doors') return doorsActive
+    if (id === 'barriers') return barriersActive
+    if (id === 'tp') return teleportMode
     return false
   }
 

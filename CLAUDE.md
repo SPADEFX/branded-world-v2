@@ -49,19 +49,24 @@ src/
 │       ├── Modal.tsx       # Zone content modals
 │       ├── DialogueBox.tsx # NPC dialogue system
 │       ├── HUD.tsx         # Discovery counter + interaction prompt
-│       ├── BottomNav.tsx   # Bottom navbar: Collision / Caméra libre / Portes (fantasy dark style)
+│       ├── BottomNav.tsx   # Bottom navbar: Collision / Caméra libre / Portes / Murs / TP (fantasy dark style)
 │       ├── PropViewerHUD.tsx # Prop viewer HUD: nav arrows ◀◀◀▶▶▶, size badge, collision toggle
 │       ├── DoorsSidebar.tsx # Doors panel — list, view style, place/export
+│       ├── MapBarriersSidebar.tsx # Barrier walls panel — draw/edit/delete walls, per-wall minY/maxY/width, export/import JSON, save to project
 │       ├── GraphicsDashboard.tsx # Graphics settings: bloom, shadows, camera mode
-│       ├── EditorSidebar.tsx # Editor panel (Move/Rotate/Eraser/TP/Save)
+│       ├── EditorSidebar.tsx # Editor panel (Move/Rotate/Eraser/Save) — toggled via backtick key
 │       └── Onboarding.tsx  # First-visit tutorial
+├── app/
+│   └── api/
+│       └── barriers/route.ts  # GET/POST — reads/writes src/config/mapBarriers.json to disk
 ├── config/
 │   ├── zones.ts            # 5 interaction zones (positions + content)
 │   ├── npcs.ts             # NPC configs (positions, models, dialogue, props)
 │   ├── indoorZones.ts      # Door trigger types + export helper
 │   ├── seasonal.ts         # Halloween + Christmas decoration configs
 │   ├── modelCatalog.ts     # Editor model browser catalog
-│   └── hitboxOverrides.ts  # Per-model collision box overrides
+│   ├── hitboxOverrides.ts  # Per-model collision box overrides
+│   └── mapBarriers.json    # Saved barrier walls (written by API route, loaded on store init)
 ├── lib/
 │   ├── worldShape.ts       # Continent polygon, point-in-polygon, biome detection
 │   ├── hitboxes.ts         # AABB collision system
@@ -75,8 +80,9 @@ src/
 │   └── waterfallMaterial.ts # Waterfall stream + pool materials
 ├── stores/
 │   ├── gameStore.ts        # Game state (modals, dialogue, zones, onboarding, joystick)
-│   ├── editorStore.ts      # Editor state + freeCamActive + viewDoorsMode + placedDoors + propViewerOpen/Index
+│   ├── editorStore.ts      # Editor state + freeCamActive + viewDoorsMode + placedDoors + propViewerOpen/Index + teleportMode
 │   ├── collisionStore.ts   # Per-prop collision toggle (enabledNames Set, persisted to localStorage, version counter)
+│   ├── mapBarrierStore.ts  # Barrier walls state — walls[], drawingPoints, isAddingWall, per-wall minY/maxY/width; persisted to localStorage + mapBarriers.json
 │   └── graphicsStore.ts    # Graphics settings: bloom, shadows, camControlMode ('keyboard'|'mouse')
 ├── hooks/
 │   └── useInput.ts         # Keyboard/gamepad/touch input
@@ -282,6 +288,12 @@ else                  → snap instantly  (falling off edge)
 
 `smoothGroundH` resets to `null` when airborne, re-initializes on first ground contact.
 
+**Ground miss protection**: `lastGroundH` + `groundMissFrames` refs — if raycast returns `-Infinity` for ≤4 frames and player is within 0.8u of last known ground, use last known value instead of going airborne. Prevents sinking on irregular geometry edges.
+
+**Hard clamp**: after all movement, if `pos.y < effectiveGroundH - 0.01` → snap up immediately. Prevents residual drift below surface.
+
+**`STEP_HEIGHT = 0.42`** — max step height the player can climb (ground raycast filter).
+
 ### Teleport (`teleportTarget` in `playerRef.ts`)
 
 Set `teleportTarget.current = { x, y, z }` from anywhere. Player consumes it on the next frame, snaps position, resets velocities and `smoothGroundH`.
@@ -329,6 +341,43 @@ Doors are placed interactively via the **BottomNav → Portes** menu.
 - **`indoorZones.ts`** — `DoorTrigger` type + `exportDoorsToClipboard()`.
 
 Door state lives in `editorStore`: `placedDoors`, `selectedDoorId`, `placeDoorMode`, `viewDoorsMode`, `doorViewStyle`.
+
+---
+
+## Barrier Wall System
+
+Invisible collision walls placed via an in-editor polyline tool. Stored in `mapBarrierStore` and `src/config/mapBarriers.json`.
+
+### Architecture
+- **`MapBarrierEditor.tsx`** (R3F) — raycast-based point placement, drag to move anchor points, wireframe visualization. Registers OBB hitboxes via `registerHitbox`. Hidden when editor closed (0 draw calls in game).
+- **`MapBarriersSidebar.tsx`** (UI) — draw controls, per-wall sliders (minY/maxY/width), wall list with unique colors, export/import JSON, save to project file.
+- **`mapBarrierStore.ts`** — Zustand store, manual localStorage persistence. Auto-hydrates from `/api/barriers` if localStorage empty.
+- **`src/app/api/barriers/route.ts`** — Next.js API route: GET reads / POST writes `src/config/mapBarriers.json`.
+
+### Wall data (`BarrierWall`)
+```ts
+{ id: string; points: { x, z }[]; width: number; minY: number; maxY: number }
+```
+
+### Key behaviors
+- **Colors**: each wall gets a stable unique color via `getWallColor(wallId)` (ID hash → HSL). Orange when selected.
+- **Click wall in 3D** → selects it + auto-scrolls sidebar. Click endpoint (green sphere) → continues wall from that end.
+- **Endpoint detection**: `SNAP_DIST = 0.6` world units. First + last point = green (continuable), mid-points = white (drag only).
+- **Hitboxes**: OBB via `registerHitbox(id, cx, cz, halfW, halfLen, maxY, false, minY, undefined, rotY)`. Re-registered on every `walls` state change.
+- **Admin toggle**: `Overlay.tsx` has an Admin button (bottom-left) that hides/shows all editor UI for testing the real player experience.
+- **BottomNav**: now includes Murs 🧱 + TP 🔀 buttons.
+
+### OBB axis convention (barrier walls)
+`rotY = Math.atan2(dx, dz)` where dx/dz = B - A segment direction.
+- Local X axis = perpendicular to segment → `halfW` = wall thickness / 2
+- Local Z axis = along segment → `halfLen` = segment length / 2
+- Three.js boxGeometry: `args=[width, wallH, length]` (X=thickness, Z=length)
+
+---
+
+## Admin Mode
+
+`Overlay.tsx` has a client-side `adminMode` boolean (default `true`). When off, hides: EditorSidebar, DoorsSidebar, MapBarriersSidebar, BottomNav, PropViewerHUD. The ⚙ Admin button stays visible in both modes. Used to preview the real player UX.
 
 ---
 

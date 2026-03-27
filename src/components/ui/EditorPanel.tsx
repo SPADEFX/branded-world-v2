@@ -26,17 +26,6 @@ export function EditorPanel() {
 
   return (
     <div className="pointer-events-auto absolute bottom-6 left-6 flex flex-col gap-2">
-      <button
-        onClick={toggle}
-        className={`rounded-full px-4 py-2 text-xs font-medium backdrop-blur-md transition-colors ${
-          enabled
-            ? 'bg-indigo-500/80 text-white hover:bg-indigo-500'
-            : 'bg-black/30 text-white/70 hover:bg-black/50'
-        }`}
-      >
-        {enabled ? 'Editor ON' : 'Editor OFF'}
-      </button>
-
       {enabled && (
         <div className="rounded-xl bg-black/50 p-4 backdrop-blur-md text-white text-xs min-w-[220px]">
           {/* Mode switcher */}

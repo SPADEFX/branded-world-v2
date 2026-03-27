@@ -7,8 +7,8 @@ import * as THREE from 'three'
 import { useInput } from '@/hooks/useInput'
 import { useGameStore } from '@/stores/gameStore'
 import { playerPosition, playerRotation, cameraInput, npcPositions, teleportTarget } from '@/lib/playerRef'
-import { testMapScene } from '@/lib/testMapRef'
-import { resolveCollisions } from '@/lib/hitboxes'
+import { testMapScene, playerCollisionMeshes } from '@/lib/testMapRef'
+import { resolveCollisions, getHitboxSurface } from '@/lib/hitboxes'
 
 const MOVE_SPEED = 4
 const ACCELERATION = 10
@@ -17,7 +17,7 @@ const ROTATION_SPEED = 12
 const JUMP_FORCE = 6
 const GRAVITY = 14
 const PLAYER_RADIUS = 0.3
-const STEP_HEIGHT = 0.35   // max step the player can climb
+const STEP_HEIGHT = 0.42   // max step the player can climb
 const WALL_CHECK_DIST = PLAYER_RADIUS + 0.05
 const DIALOGUE_STAND_DIST = 1.8
 const DIALOGUE_MOVE_SPEED = 4
@@ -35,11 +35,11 @@ const _wallDirs = [
 ]
 
 function getGroundHeight(px: number, py: number, pz: number): number {
-  const scenes = testMapScene.current
-  if (!scenes.length) return py
+  const meshes = playerCollisionMeshes.current
+  if (!meshes.length) return py
   _rayOrigin.set(px, py + 10, pz)
   _downRaycaster.set(_rayOrigin, _downDir)
-  const hits = _downRaycaster.intersectObjects(scenes, true)
+  const hits = _downRaycaster.intersectObjects(meshes, false)
   for (const hit of hits) {
     if (hit.point.y <= py + STEP_HEIGHT) return hit.point.y
   }
@@ -48,18 +48,17 @@ function getGroundHeight(px: number, py: number, pz: number): number {
 
 /** Returns how much to push the player back per axis to avoid walls. */
 function resolveWalls(px: number, py: number, pz: number): { dx: number; dz: number } {
-  const scenes = testMapScene.current
-  if (!scenes.length) return { dx: 0, dz: 0 }
+  const meshes = playerCollisionMeshes.current
+  if (!meshes.length) return { dx: 0, dz: 0 }
 
   let dx = 0
   let dz = 0
-  // Cast from above step height to avoid treating stair risers as walls
   _rayOrigin.set(px, py + STEP_HEIGHT + 0.3, pz)
 
   for (const dir of _wallDirs) {
     _wallRaycaster.set(_rayOrigin, dir)
     _wallRaycaster.far = WALL_CHECK_DIST
-    const hits = _wallRaycaster.intersectObjects(scenes, true)
+    const hits = _wallRaycaster.intersectObjects(meshes, false)
     if (hits.length > 0) {
       const pen = WALL_CHECK_DIST - hits[0].distance
       dx -= dir.x * pen
@@ -80,6 +79,9 @@ export function Player() {
   const isJumpingRef = useRef(false)
   const verticalVelocity = useRef(0)
   const smoothGroundH = useRef<number | null>(null)
+  const lastGroundH = useRef<number>(-Infinity)
+  const groundMissFrames = useRef(0)
+  const coyoteTime = useRef(0)
   const keys = useInput()
 
   const { scene: model } = useGLTF('/models/character/Knight.glb')
@@ -140,6 +142,8 @@ export function Player() {
       velocityRef.current.set(0, 0)
       verticalVelocity.current = 0
       smoothGroundH.current = t.y
+      lastGroundH.current = t.y
+      groundMissFrames.current = 0
       playerPosition.x = t.x; playerPosition.y = t.y; playerPosition.z = t.z
     }
 
@@ -221,25 +225,46 @@ export function Player() {
     }
 
     const pos = groupRef.current.position
-    const groundH = getGroundHeight(pos.x, pos.y, pos.z)
-    const onGround = groundH > -Infinity && pos.y <= groundH + 0.05
+    let groundH = getGroundHeight(pos.x, pos.y, pos.z)
+    const hbSurf  = getHitboxSurface(pos.x, pos.y, pos.z)
+
+    // If raycast misses (groundH = -Infinity), use last known ground for a few frames
+    // to prevent sinking/falling on irregular geometry edges
+    if (groundH > -Infinity) {
+      lastGroundH.current = groundH
+      groundMissFrames.current = 0
+    } else {
+      groundMissFrames.current++
+      // Grace: up to 4 frames of miss → stay on last known ground if player is close to it
+      if (groundMissFrames.current <= 4 && Math.abs(pos.y - lastGroundH.current) < 0.8) {
+        groundH = lastGroundH.current
+      }
+    }
+
+    // Treat top of hitbox props as ground surface when player is standing on one
+    const effectiveGroundH = hbSurf > 0
+      ? Math.max(groundH > -Infinity ? groundH : 0, hbSurf)
+      : groundH
+    const onGround = effectiveGroundH > -Infinity && pos.y <= effectiveGroundH + 0.05
+
+    // Coyote time — allows jumping briefly after leaving ground (e.g. between stair steps)
+    if (onGround) {
+      coyoteTime.current = 0.12
+    } else {
+      coyoteTime.current = Math.max(0, coyoteTime.current - dt)
+    }
+    const canJump = onGround || coyoteTime.current > 0
 
     // ── Snap to ground / gravity ──
     if (onGround && verticalVelocity.current <= 0) {
-      // Low-pass filter ground height: damps tiny pavé bumps, tracks stairs.
-      // Going up: lerp at 12 (fast enough for stairs, damps sub-5cm variations).
-      // Going down: snap instantly.
-      if (smoothGroundH.current === null) smoothGroundH.current = groundH
-      const gap = groundH - smoothGroundH.current
+      if (smoothGroundH.current === null) smoothGroundH.current = effectiveGroundH
+      const gap = effectiveGroundH - smoothGroundH.current
       if (gap > 0.05) {
-        // Real stair riser (≥5 cm) — track fast so player doesn't sink
-        smoothGroundH.current = THREE.MathUtils.lerp(smoothGroundH.current, groundH, Math.min(20 * dt, 1))
+        smoothGroundH.current = THREE.MathUtils.lerp(smoothGroundH.current, effectiveGroundH, Math.min(20 * dt, 1))
       } else if (gap > -0.05) {
-        // Small variation ±5 cm (pavé, gentle slope) — slow lerp damps bobbing
-        smoothGroundH.current = THREE.MathUtils.lerp(smoothGroundH.current, groundH, Math.min(5 * dt, 1))
+        smoothGroundH.current = THREE.MathUtils.lerp(smoothGroundH.current, effectiveGroundH, Math.min(5 * dt, 1))
       } else {
-        // Large drop (ledge edge) — snap immediately
-        smoothGroundH.current = groundH
+        smoothGroundH.current = effectiveGroundH
       }
       pos.y = smoothGroundH.current
       verticalVelocity.current = 0
@@ -254,7 +279,7 @@ export function Player() {
 
     // ── Jump ──
     const jumpPressed = keys.current.jump
-    if (jumpPressed && !prevJump.current && onGround && !isJumpingRef.current) {
+    if (jumpPressed && !prevJump.current && canJump && !isJumpingRef.current) {
       verticalVelocity.current = JUMP_FORCE
       isJumpingRef.current = true
       const acts = actionsRef.current
@@ -273,14 +298,27 @@ export function Player() {
       if (groundH > -Infinity && pos.y < groundH) {
         pos.y = groundH
         verticalVelocity.current = 0
+        groundMissFrames.current = 0
       }
+      // Clamp against hitbox prop surfaces (prevents falling through tables etc.)
+      if (hbSurf > 0 && pos.y < hbSurf) {
+        pos.y = hbSurf
+        verticalVelocity.current = 0
+      }
+    }
+
+    // Hard clamp: never sink below detected ground (catches any residual drift)
+    if (effectiveGroundH > -Infinity && pos.y < effectiveGroundH - 0.01) {
+      pos.y = effectiveGroundH
+      verticalVelocity.current = 0
     }
 
     // ── Move + wall collision ──
     pos.x += vel.x * dt
     pos.z += vel.y * dt
 
-    const walls = resolveWalls(pos.x, pos.y, pos.z)
+    const isMovingNow = Math.abs(vel.x) > 0.001 || Math.abs(vel.y) > 0.001
+    const walls = isMovingNow ? resolveWalls(pos.x, pos.y, pos.z) : { dx: 0, dz: 0 }
     pos.x += walls.dx
     pos.z += walls.dz
 
