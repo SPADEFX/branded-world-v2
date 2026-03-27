@@ -12,6 +12,7 @@ import { BottomNav } from './BottomNav'
 import { DoorsSidebar } from './DoorsSidebar'
 import { MapBarriersSidebar } from './MapBarriersSidebar'
 import { PropViewerHUD } from './PropViewerHUD'
+import { Minimap } from './Minimap'
 
 export function Overlay() {
   const [isMobile, setIsMobile] = useState(false)
@@ -51,6 +52,8 @@ export function Overlay() {
       >
         {adminMode ? '⚙ Admin' : '⚙'}
       </button>
+
+      <Minimap />
 
       {isMobile && <MobileControls />}
     </div>

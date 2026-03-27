@@ -53,6 +53,7 @@ src/
 │       ├── PropViewerHUD.tsx # Prop viewer HUD: nav arrows ◀◀◀▶▶▶, size badge, collision toggle
 │       ├── DoorsSidebar.tsx # Doors panel — list, view style, place/export
 │       ├── MapBarriersSidebar.tsx # Barrier walls panel — draw/edit/delete walls, per-wall minY/maxY/width, export/import JSON, save to project
+│       ├── Minimap.tsx     # Canvas minimap: fog of war + player dot + zone discovery toast (bottom-right, always visible)
 │       ├── GraphicsDashboard.tsx # Graphics settings: bloom, shadows, camera mode
 │       ├── EditorSidebar.tsx # Editor panel (Move/Rotate/Eraser/Save) — toggled via backtick key
 │       └── Onboarding.tsx  # First-visit tutorial
@@ -66,7 +67,8 @@ src/
 │   ├── seasonal.ts         # Halloween + Christmas decoration configs
 │   ├── modelCatalog.ts     # Editor model browser catalog
 │   ├── hitboxOverrides.ts  # Per-model collision box overrides
-│   └── mapBarriers.json    # Saved barrier walls (written by API route, loaded on store init)
+│   ├── mapBarriers.json    # Saved barrier walls (written by API route, loaded on store init)
+│   └── minimapConfig.ts   # World bounds + zone area definitions for minimap
 ├── lib/
 │   ├── worldShape.ts       # Continent polygon, point-in-polygon, biome detection
 │   ├── hitboxes.ts         # AABB collision system
@@ -83,6 +85,7 @@ src/
 │   ├── editorStore.ts      # Editor state + freeCamActive + viewDoorsMode + placedDoors + propViewerOpen/Index + teleportMode
 │   ├── collisionStore.ts   # Per-prop collision toggle (enabledNames Set, persisted to localStorage, version counter)
 │   ├── mapBarrierStore.ts  # Barrier walls state — walls[], drawingPoints, isAddingWall, per-wall minY/maxY/width; persisted to localStorage + mapBarriers.json
+│   ├── minimapStore.ts     # Zone discovery state (discoveredZones[], pendingNotification); persisted to localStorage bw_minimap_discovered
 │   └── graphicsStore.ts    # Graphics settings: bloom, shadows, camControlMode ('keyboard'|'mouse')
 ├── hooks/
 │   └── useInput.ts         # Keyboard/gamepad/touch input
@@ -378,6 +381,45 @@ Invisible collision walls placed via an in-editor polyline tool. Stored in `mapB
 ## Admin Mode
 
 `Overlay.tsx` has a client-side `adminMode` boolean (default `true`). When off, hides: EditorSidebar, DoorsSidebar, MapBarriersSidebar, BottomNav, PropViewerHUD. The ⚙ Admin button stays visible in both modes. Used to preview the real player UX.
+
+---
+
+## Minimap System
+
+Static image minimap with fog-of-war zone discovery. Always visible (not gated by admin mode).
+
+### Files
+- **`src/config/minimapConfig.ts`** — `MINIMAP_WORLD` bounds, `MINIMAP_SIZE` (180px), `MINIMAP_ZONES[]` area definitions
+- **`src/stores/minimapStore.ts`** — `discoveredZones[]` (persisted to localStorage `bw_minimap_discovered`), `pendingNotification`, `discoverZone(id, label)`, `resetDiscovery()`
+- **`src/components/ui/Minimap.tsx`** — canvas-based component (bottom-right, `z-30`)
+- **`public/ui/minimap.png`** — top-down map image (user-provided; system shows placeholder grid if absent)
+
+### How it works
+1. **Canvas draw loop** (100ms interval): draws map image → fog canvas → player dot (yellow circle)
+2. **Fog of war**: offscreen `HTMLCanvasElement` filled dark, discovered zones punched out with `destination-out` gradient ellipses. Fog rebuilt only when `discoveredZones` changes.
+3. **Zone discovery** (500ms interval): checks `playerPosition` against `MINIMAP_ZONES[]` rectangular bounds. First entry → `discoverZone(id, label)` → persists to localStorage, shows toast notification.
+4. **Toast notification**: `AnimatePresence` slide-in, auto-dismissed after 3s.
+5. **Discovery counter**: `N / TOTAL zones` shown below the minimap panel.
+
+### Coordinate mapping
+```ts
+// MINIMAP_WORLD = { xMin: -75, xMax: 75, zMin: -80, zMax: 65 }
+// Set MINIMAP_FLIP_Z = true if screenshot has north at the bottom
+nx = (worldX - xMin) / (xMax - xMin)  → pixel X
+nz = (worldZ - zMin) / (zMax - zMin)  → pixel Y
+```
+
+### Adding the minimap image
+1. Use editor top-down camera + screenshot
+2. Crop to square
+3. Drop as `public/ui/minimap.png`
+4. Tune `MINIMAP_WORLD` bounds in `minimapConfig.ts` until player dot position matches
+
+### Console helper
+```js
+// Reset all zone discovery (for testing)
+useMinimapStore.getState().resetDiscovery()
+```
 
 ---
 
