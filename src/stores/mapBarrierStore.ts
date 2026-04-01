@@ -22,7 +22,7 @@ function loadFromStorage(): BarrierWall[] {
     if (!raw) return []
     const walls = JSON.parse(raw) as BarrierWall[]
     // Migrate old walls that don't have per-wall minY/maxY
-    return walls.map((w) => ({ minY: -1, maxY: 8, ...w }))
+    return walls.map((w) => ({ ...w, minY: w.minY ?? -1, maxY: w.maxY ?? 8 }))
   } catch {
     return []
   }
