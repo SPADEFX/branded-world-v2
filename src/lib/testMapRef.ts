@@ -39,3 +39,6 @@ export const detailMiscMeshes: { current: THREE.Mesh[] } = { current: [] }
 /** DetailMisc instanced meshes — culled at 30u (nearest instance check). */
 export const detailMiscInstancedMeshes: { current: THREE.InstancedMesh[] } = { current: [] }
 
+/** Flat array of collision-only meshes — used by Player/NPC raycasts instead of full scene traversal. */
+export const playerCollisionMeshes: { current: THREE.Mesh[] } = { current: [] }
+

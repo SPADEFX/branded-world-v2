@@ -23,6 +23,7 @@ import { DoorViewer } from './DoorViewer'
 import { FPSTracker } from './FPSTracker'
 import { CullingDebugVisualizer } from './CullingDebugVisualizer'
 import { PropViewerHighlight } from './PropViewerHighlight'
+import { MapBarrierEditor } from './MapBarrierEditor'
 import { EffectComposer, Bloom, HueSaturation, BrightnessContrast } from '@react-three/postprocessing'
 import { Preload } from '@react-three/drei'
 import { useGraphicsStore } from '@/stores/graphicsStore'
@@ -71,6 +72,7 @@ function SceneContents() {
       <FPSTracker />
       <CullingDebugVisualizer />
       <PropViewerHighlight />
+      <MapBarrierEditor />
     </>
   )
 }

@@ -3,6 +3,7 @@ import { HITBOX_OVERRIDES } from '@/config/hitboxOverrides'
 
 // ── Player dimensions ───────────────────────────────────────────────────────
 export const PLAYER_RADIUS = 0.25
+export const PLAYER_HEIGHT = 1.8
 
 // ── Skip list — decorative / walkable objects ───────────────────────────────
 const NO_COLLISION_PATTERNS = [
@@ -40,13 +41,73 @@ function isTrunkModel(modelPath: string): boolean {
 export interface Hitbox {
   x: number
   z: number
-  halfW: number  // half-extent in X (or radius for circle)
-  halfD: number  // half-extent in Z (ignored for circle)
-  height: number // top of the box (Y)
+  halfW: number    // half-extent in X (or radius for circle)
+  halfD: number    // half-extent in Z (ignored for circle)
+  minY: number     // bottom of the box (Y)
+  height: number   // top of the box (Y)
+  rotY?: number    // rotation around Y axis (radians) — enables OBB collision
   circle?: boolean // true = circle collision (halfW = radius)
+  baseName?: string // prop type — set for dc_ detailmisc hitboxes
 }
 
 export const hitboxMap: Record<string, Hitbox> = {}
+
+// Original dims before any scale override — keyed by hitbox id
+interface OrigDim {
+  localHalfW: number   // half-extent in object's LOCAL X
+  localHalfD: number   // half-extent in object's LOCAL Z
+  instanceRotY: number // world rotation Y of the instance (radians)
+  cx: number; cz: number // world center XZ
+  minY: number; height: number // world Y range (no override)
+}
+const _origDims: Record<string, OrigDim> = {}
+
+// ── Hitbox shape overrides (hardcoded — edit here to make permanent) ──────────
+// Update via prop viewer UI then click "Copier config" to get the TS snippet.
+export interface SubBox { ox: number; oz: number; oy?: number; hw: number; hd: number }
+export interface ArchConfig { ecartement: number; rayon: number }
+export interface HitboxOverride { w: number; d: number; h: number; rotY: number; subBoxes?: SubBox[]; arch?: ArchConfig }
+
+const HITBOX_SHAPE_OVERRIDES: Record<string, HitboxOverride> = {
+  'SM_Prop_Lamp_Post_01': { w: 0.5, d: 0.5, h: 1, rotY: 0 * Math.PI / 180 },
+}
+
+/** Returns sub-box definitions for props that need a split hitbox (e.g. arches). */
+export function getHitboxSubBoxes(baseName: string): SubBox[] | undefined {
+  return HITBOX_SHAPE_OVERRIDES[baseName]?.subBoxes
+}
+
+/** Returns arch config (two symmetric pillars) if defined for this prop. */
+export function getHitboxArch(baseName: string): ArchConfig | undefined {
+  return HITBOX_SHAPE_OVERRIDES[baseName]?.arch
+}
+
+// In-session mutable copy — starts from hardcoded values, updated by UI
+export const hitboxScales: Record<string, HitboxOverride> = Object.fromEntries(
+  Object.entries(HITBOX_SHAPE_OVERRIDES).map(([k, v]) => [k, { ...v }])
+)
+
+export function applyHitboxScale(baseName: string, w: number, d: number, h: number, rotYOffset: number) {
+  hitboxScales[baseName] = { w, d, h, rotY: rotYOffset }
+  let count = 0
+  for (const id in _origDims) {
+    if (hitboxMap[id]?.baseName !== baseName) continue
+    count++
+    const o = _origDims[id]
+    const midY  = (o.minY + o.height) / 2
+    const halfH = (o.height - o.minY) / 2
+    hitboxMap[id] = {
+      ...hitboxMap[id],
+      x: o.cx, z: o.cz,
+      halfW:  o.localHalfW * w,
+      halfD:  o.localHalfD * d,
+      minY:   midY - halfH * h,
+      height: midY + halfH * h,
+      rotY:   o.instanceRotY + rotYOffset,
+    }
+  }
+  console.log(`[hitboxScale] ${baseName} → w=${w} d=${d} h=${h} rot=${rotYOffset.toFixed(2)} | updated ${count} hitboxes`)
+}
 
 // ── Bounds cache (per model path, before scale) ─────────────────────────────
 interface ModelBounds {
@@ -84,12 +145,24 @@ export function registerHitbox(
   halfD: number,
   height: number,
   circle?: boolean,
+  minY = 0,
+  baseName?: string,
+  instanceRotY = 0,
 ) {
-  hitboxMap[id] = { x, z, halfW, halfD, height, circle }
+  hitboxMap[id] = { x, z, halfW, halfD, minY, height, circle, baseName, rotY: instanceRotY || undefined }
+  if (baseName) {
+    _origDims[id] = {
+      localHalfW: halfW, localHalfD: halfD,
+      instanceRotY,
+      cx: x, cz: z,
+      minY, height,
+    }
+  }
 }
 
 export function unregisterHitbox(id: string) {
   delete hitboxMap[id]
+  delete _origDims[id]
 }
 
 /** Nuke every entry in hitboxMap. Call bumpHitboxVersion() after to re-register. */
@@ -187,6 +260,29 @@ function getModelBoundsWithScale(modelPath: string, scene: THREE.Object3D, pad: 
 
 // ── Queries ─────────────────────────────────────────────────────────────────
 
+/** Highest hitbox surface the player is standing on (for landing on props).
+ *  Only counts a surface if the player's Y is already near or above it — prevents
+ *  snapping the player up onto a prop they're just walking next to. */
+export function getHitboxSurface(px: number, py: number, pz: number): number {
+  const pr = PLAYER_RADIUS
+  let best = 0
+  for (const id in hitboxMap) {
+    const hb = hitboxMap[id]
+    if (shouldSkipLanding(id)) continue
+    if (py < hb.height - 0.25) continue // player not near this surface yet
+    let inside: boolean
+    if (hb.circle) {
+      const dx = px - hb.x, dz = pz - hb.z
+      inside = dx * dx + dz * dz < (hb.halfW + pr) * (hb.halfW + pr)
+    } else {
+      inside = px > hb.x - hb.halfW - pr && px < hb.x + hb.halfW + pr
+           && pz > hb.z - hb.halfD - pr && pz < hb.z + hb.halfD + pr
+    }
+    if (inside && hb.height > best) best = hb.height
+  }
+  return best
+}
+
 /** Check if the player is standing on a hitbox surface (within tolerance). */
 export function getGroundHeight(px: number, py: number, pz: number): number {
   const pr = PLAYER_RADIUS
@@ -204,7 +300,7 @@ export function getGroundHeight(px: number, py: number, pz: number): number {
       const insideZ = pz > hb.z - hb.halfD - pr && pz < hb.z + hb.halfD + pr
       inside = insideX && insideZ
     }
-    if (inside && py >= hb.height - 0.01 && py <= hb.height + 0.1 && hb.height > best) {
+    if (inside && py >= hb.minY - 0.1 && py >= hb.height - 0.01 && py <= hb.height + 0.1 && hb.height > best) {
       best = hb.height
     }
   }
@@ -232,6 +328,8 @@ export function resolveCollisions(
 
     if (hb.circle) {
       // ── Circle collision ──
+      if (py + PLAYER_HEIGHT < hb.minY) continue // skip if hitbox is entirely above player's head
+
       const dx = x - hb.x
       const dz = z - hb.z
       const dist = Math.sqrt(dx * dx + dz * dz)
@@ -259,43 +357,48 @@ export function resolveCollisions(
       continue
     }
 
-    // ── Box (AABB) collision ──
-    // Expanded box edges (account for player radius)
-    const left = hb.x - hb.halfW - pr
-    const right = hb.x + hb.halfW + pr
-    const front = hb.z - hb.halfD - pr
-    const back = hb.z + hb.halfD + pr
+    // ── Box collision (AABB or OBB if rotY set) ──
+    if (py + PLAYER_HEIGHT < hb.minY) continue // skip if hitbox is entirely above player's head
 
-    const insideX = x > left && x < right
-    const insideZ = z > front && z < back
+    // Transform player into box local space if rotated
+    const rot = hb.rotY ?? 0
+    const cosR = Math.cos(rot), sinR = Math.sin(rot)
+    const wdx = x - hb.x, wdz = z - hb.z
+    const lx = wdx * cosR - wdz * sinR  // local X
+    const lz = wdx * sinR + wdz * cosR  // local Z
 
-    // ── Landing on top (skip for trees etc.) ──
-    // Player is above or at box top and within XZ footprint
+    const left  = -hb.halfW - pr, right = hb.halfW + pr
+    const front = -hb.halfD - pr, back  = hb.halfD + pr
+
+    const insideX = lx > left && lx < right
+    const insideZ = lz > front && lz < back
+
+    // ── Landing on top ──
     if (!shouldSkipLanding(id) && insideX && insideZ && py >= hb.height - 0.05 && py <= hb.height + 0.15 && vy <= 0) {
-      // Check if this box top is the highest surface under the player
-      if (hb.height > landY) {
-        landY = hb.height
-      }
-      continue // don't push sideways when on top
+      if (hb.height > landY) landY = hb.height
+      continue
     }
 
-    // ── XZ push-out (only when player is below the box top) ──
     if (!insideX || !insideZ) continue
     if (py >= hb.height) continue
 
-    // Find the smallest push to exit the box
-    const pushLeft = x - left   // distance to left edge
-    const pushRight = right - x // distance to right edge
-    const pushFront = z - front // distance to front edge
-    const pushBack = back - z   // distance to back edge
+    // ── XZ push-out in local space, then rotate back to world ──
+    const pushLeft  = lx - left, pushRight = right - lx
+    const pushFront = lz - front, pushBack = back - lz
 
     const minPush = Math.min(pushLeft, pushRight, pushFront, pushBack)
-    const capped = Math.min(minPush, 0.5) // cap to prevent teleporting
+    const capped = Math.min(minPush, 0.5)
 
-    if (minPush === pushLeft) x -= capped
-    else if (minPush === pushRight) x += capped
-    else if (minPush === pushFront) z -= capped
-    else z += capped
+    let pushLX = 0, pushLZ = 0
+    if (minPush === pushLeft)       pushLX = -capped
+    else if (minPush === pushRight) pushLX = +capped
+    else if (minPush === pushFront) pushLZ = -capped
+    else                            pushLZ = +capped
+
+    // Rotate push vector back to world space
+    const cosF = Math.cos(rot), sinF = Math.sin(rot)
+    x += pushLX * cosF + pushLZ * sinF
+    z += -pushLX * sinF + pushLZ * cosF
   }
 
   return [x, landY, z]

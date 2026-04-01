@@ -53,9 +53,11 @@ interface EditorState {
   propViewerOpen: boolean
   propViewerIndex: number
   propViewerCollection: PropCollection
+  showHitboxes: boolean
   setPropViewerOpen: (v: boolean) => void
   setPropViewerIndex: (v: number) => void
   setPropViewerCollection: (c: PropCollection) => void
+  setShowHitboxes: (v: boolean) => void
   setViewDoorsMode: (mode: boolean) => void
   setDoorTransformMode: (mode: 'grab' | 'rotate' | 'scale' | null) => void
   setDoorViewStyle: (style: 'xray' | 'full' | 'wireframe') => void
@@ -106,6 +108,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   propViewerOpen: false,
   propViewerIndex: 0,
   propViewerCollection: 'detailmisc' as PropCollection,
+  showHitboxes: false,
   placedDoors: loadSavedDoors(),
   selectedDoorId: null,
   doorTransformMode: null,
@@ -134,9 +137,10 @@ export const useEditorStore = create<EditorState>((set) => ({
   setFreeCamActive: (v) => set({ freeCamActive: v }),
   setCullingDebug: (v) => set({ cullingDebug: v }),
   setCollisionManagerOpen: (v) => set({ collisionManagerOpen: v }),
-  setPropViewerOpen: (v) => set({ propViewerOpen: v }),
+  setPropViewerOpen: (v) => set({ propViewerOpen: v, ...(v ? {} : { showHitboxes: false }) }),
   setPropViewerIndex: (v) => set({ propViewerIndex: v }),
   setPropViewerCollection: (c) => set({ propViewerCollection: c, propViewerIndex: 0 }),
+  setShowHitboxes: (v) => set({ showHitboxes: v }),
   setViewDoorsMode: (mode) =>
     set({ viewDoorsMode: mode, ...(mode ? { cameraMode: 'free' } : {}) }),
   setDoorTransformMode: (mode) => set({ doorTransformMode: mode }),

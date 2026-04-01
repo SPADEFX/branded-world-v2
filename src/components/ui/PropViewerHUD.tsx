@@ -1,11 +1,12 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useEditorStore } from '@/stores/editorStore'
 import { useCollisionStore } from '@/stores/collisionStore'
 import { propRegistry, type PropCollection } from '@/lib/testMapRef'
 import { propViewerFlyTo } from '@/lib/propViewerRef'
+import { hitboxScales, applyHitboxScale } from '@/lib/hitboxes'
 
 const PLAYER_HEIGHT = 1.8
 
@@ -52,6 +53,8 @@ export function PropViewerHUD() {
   const propViewerIndex      = useEditorStore((s) => s.propViewerIndex)
   const propViewerCollection = useEditorStore((s) => s.propViewerCollection)
   const setPropViewerCollection = useEditorStore((s) => s.setPropViewerCollection)
+  const showHitboxes         = useEditorStore((s) => s.showHitboxes)
+  const setShowHitboxes      = useEditorStore((s) => s.setShowHitboxes)
   const { enabledNames, toggle, hiddenNames, toggleHidden } = useCollisionStore()
 
   const collectionProps = propRegistry[propViewerCollection]
@@ -62,6 +65,18 @@ export function PropViewerHUD() {
   const fixedWidth = collectionProps.length
     ? Math.max(240, Math.max(...collectionProps.map((p) => p.baseName.length)) * 7.6 + 64)
     : 260
+
+  const [hbW,       setHbW]       = useState(1)
+  const [hbD,       setHbD]       = useState(1)
+  const [hbH,       setHbH]       = useState(1)
+  const [hbRotYDeg, setHbRotYDeg] = useState(0)
+  useEffect(() => {
+    const s = info?.baseName ? hitboxScales[info.baseName] : undefined
+    setHbW(s?.w ?? 1)
+    setHbD(s?.d ?? 1)
+    setHbH(s?.h ?? 1)
+    setHbRotYDeg(s ? Math.round(s.rotY * 180 / Math.PI) : 0)
+  }, [info?.baseName])
 
   const navigate = useCallback((delta: number) => {
     if (!propViewerFlyTo.current || total === 0) return
@@ -199,6 +214,81 @@ export function PropViewerHUD() {
                 >
                   {enabled ? '✓ Collision active' : 'Activer la collision'}
                 </motion.button>
+
+                {/* Hitbox visualizer toggle — detailmisc only (others use BVH, no AABB) */}
+                {propViewerCollection === 'detailmisc' && (
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setShowHitboxes(!showHitboxes)}
+                    style={{
+                      ...barStyle,
+                      padding: '9px 22px',
+                      fontSize: 12, fontWeight: 700,
+                      cursor: 'pointer',
+                      color: showHitboxes ? '#00ff88' : 'rgba(255,255,255,0.4)',
+                      borderColor: showHitboxes ? 'rgba(0,255,136,0.5)' : 'rgba(255,255,255,0.1)',
+                      background: showHitboxes
+                        ? 'linear-gradient(180deg, rgba(0,255,136,0.1) 0%, rgba(0,120,60,0.1) 100%)'
+                        : 'linear-gradient(180deg, rgba(30,18,6,0.97) 0%, rgba(16,9,2,0.99) 100%)',
+                      transition: 'color 0.15s, border-color 0.15s, background 0.15s',
+                    }}
+                  >
+                    {showHitboxes ? '✓ Hitboxes' : 'Hitboxes'}
+                  </motion.button>
+                )}
+
+                {/* Hitbox scale — only visible when hitboxes shown, detailmisc, and collision active */}
+                {propViewerCollection === 'detailmisc' && showHitboxes && enabled && (() => {
+                  const SIZE_PRESETS = [0.1, 0.25, 0.5, 0.75, 1, 1.5, 2]
+                  const ROT_PRESETS  = [0, 15, 30, 45, 60, 75, 90]
+
+                  const apply = (w = hbW, d = hbD, h = hbH, r = hbRotYDeg) => {
+                    if (!info) return
+                    applyHitboxScale(info.baseName, w, d, h, r * Math.PI / 180)
+                  }
+
+                  const scaleRow = (label: string, current: number, set: (v: number) => void, presets = SIZE_PRESETS) => (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', width: 18, textAlign: 'right', flexShrink: 0 }}>{label}</span>
+                      {presets.map((v) => (
+                        <button key={v} onClick={() => { set(v); apply(...([label === 'W' ? v : hbW, label === 'D' ? v : hbD, label === 'H' ? v : hbH, label === '°' ? v : hbRotYDeg] as [number,number,number,number])) }}
+                          style={{
+                            padding: '2px 6px', borderRadius: 5, fontSize: 10, fontWeight: 700,
+                            border: Math.abs(current - v) < 0.01 ? '1px solid rgba(0,255,136,0.6)' : '1px solid rgba(255,255,255,0.08)',
+                            background: Math.abs(current - v) < 0.01 ? 'rgba(0,255,136,0.15)' : 'rgba(255,255,255,0.04)',
+                            color: Math.abs(current - v) < 0.01 ? '#00ff88' : 'rgba(255,255,255,0.45)',
+                            cursor: 'pointer',
+                          }}
+                        >{v}</button>
+                      ))}
+                    </div>
+                  )
+
+                  return (
+                    <div style={{ ...barStyle, display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 14px' }}>
+                      {scaleRow('W', hbW, (v) => { setHbW(v); apply(v, hbD, hbH, hbRotYDeg) })}
+                      {scaleRow('D', hbD, (v) => { setHbD(v); apply(hbW, v, hbH, hbRotYDeg) })}
+                      {scaleRow('H', hbH, (v) => { setHbH(v); apply(hbW, hbD, v, hbRotYDeg) })}
+                      {scaleRow('°', hbRotYDeg, (v) => { setHbRotYDeg(v); apply(hbW, hbD, hbH, v) }, ROT_PRESETS)}
+                      <button
+                        onClick={() => {
+                          // Always include current prop (as template), merge with other saved overrides
+                          const merged: Record<string, typeof hitboxScales[string]> = { ...hitboxScales }
+                          if (info) merged[info.baseName] = { w: hbW, d: hbD, h: hbH, rotY: hbRotYDeg * Math.PI / 180 }
+                          const entries = Object.entries(merged).filter(([, s]) => s.w !== 1 || s.d !== 1 || s.h !== 1 || s.rotY !== 0)
+                          const all = entries.length ? entries : (info ? [[info.baseName, { w: hbW, d: hbD, h: hbH, rotY: 0 }]] : []) as [string, typeof hitboxScales[string]][]
+                          const lines = all.map(([k, s]) => `  '${k}': { w: ${s.w}, d: ${s.d}, h: ${s.h}, rotY: ${+(s.rotY * 180 / Math.PI).toFixed(1)} * Math.PI / 180 },`).join('\n')
+                          navigator.clipboard.writeText(`const HITBOX_SHAPE_OVERRIDES: Record<string, HitboxOverride> = {\n${lines}\n}`)
+                        }}
+                        style={{
+                          padding: '3px 0', borderRadius: 5, fontSize: 10, fontWeight: 700,
+                          border: '1px solid rgba(255,200,80,0.3)', background: 'rgba(255,200,80,0.08)',
+                          color: 'rgba(255,200,80,0.7)', cursor: 'pointer', marginTop: 2,
+                        }}
+                      >Copier config</button>
+                    </div>
+                  )
+                })()}
 
                 {/* Hide toggle */}
                 <motion.button

@@ -4,6 +4,7 @@ const CLIFF_PATTERNS = [
   'SM_Env_Rock_Cliff', 'SM_Env_Mountains', 'SM_Env_Rock_01',
   'SM_Env_Rock_02', 'SM_Env_Rock_03', 'SM_Env_Rock_Round',
   'SM_Env_Rock_Square', 'SM_Env_Rock_Bridge', 'SM_Env_Rock_Stairs',
+  'SM_Env_Bridge_Statue',
 ]
 
 const cliffUniforms = {

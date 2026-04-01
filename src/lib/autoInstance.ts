@@ -28,18 +28,26 @@ export function autoInstance(scene: THREE.Object3D): THREE.Mesh[] {
   scene.updateWorldMatrix(true, false)
   const sceneInv = new THREE.Matrix4().copy(scene.matrixWorld).invert()
   const relMatrix = new THREE.Matrix4()
+  const _pos = new THREE.Vector3()
 
   let instanced = 0, singletons = 0
   const remaining: THREE.Mesh[] = []
   for (const [, group] of groups) {
-    if (group.length < THRESHOLD) {
-      remaining.push(...group)
-      singletons += group.length
+    // Filter out unplaced template meshes sitting at the world origin
+    const placed = group.filter((m) => {
+      m.updateWorldMatrix(true, false)
+      m.matrixWorld.decompose(_pos, new THREE.Quaternion(), new THREE.Vector3())
+      return _pos.lengthSq() > 0.0001
+    })
+
+    if (placed.length < THRESHOLD) {
+      remaining.push(...placed)
+      singletons += placed.length
       continue
     }
-    instanced += group.length
+    instanced += placed.length
 
-    const first = group[0]
+    const first = placed[0]
     // Force DoubleSide so mirrored instances (negative scale) don't have
     // invisible back-faces due to winding flip. Modify in-place to avoid
     // breaking custom shader cache keys (e.g. cliffMaterial).
@@ -48,17 +56,17 @@ export function autoInstance(scene: THREE.Object3D): THREE.Mesh[] {
       mat.side = THREE.DoubleSide
       mat.needsUpdate = true
     }
-    const inst = new THREE.InstancedMesh(first.geometry, mat, group.length)
+    const inst = new THREE.InstancedMesh(first.geometry, mat, placed.length)
     inst.name = first.name  // preserve for collision lookups
     inst.castShadow = first.castShadow
     inst.receiveShadow = first.receiveShadow
     inst.frustumCulled = true
 
-    for (let i = 0; i < group.length; i++) {
-      group[i].updateWorldMatrix(true, false)
-      relMatrix.multiplyMatrices(sceneInv, group[i].matrixWorld)
+    for (let i = 0; i < placed.length; i++) {
+      placed[i].updateWorldMatrix(true, false)
+      relMatrix.multiplyMatrices(sceneInv, placed[i].matrixWorld)
       inst.setMatrixAt(i, relMatrix)
-      group[i].parent?.remove(group[i])
+      placed[i].parent?.remove(placed[i])
     }
     inst.instanceMatrix.needsUpdate = true
     inst.computeBoundingSphere()

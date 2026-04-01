@@ -354,9 +354,7 @@ function NPC({ id, position, rotation, model: modelPath, activity = 'wander', pr
         if (isInsideLand(newX, newZ) && distanceToShore(newX, newZ) >= 2) {
           pos.x = newX
           pos.z = newZ
-          // Snap Y to terrain while moving
-          const gy = getGroundY(newX, newZ)
-          if (gy !== null) pos.y = gy
+          // Ground raycast disabled for perf test
         } else {
           // Hit boundary — go idle
           stateRef.current = 'idle'

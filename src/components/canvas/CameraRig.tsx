@@ -91,6 +91,7 @@ export function CameraRig() {
     }
   }, [gl])
 
+  const camFrameCounter = useRef(0)
   useFrame((_, delta) => {
     const { enabled: editorOn, cameraMode, freeCamActive, viewDoorsMode } = useEditorStore.getState()
     if (freeCamActive || viewDoorsMode) return
@@ -179,7 +180,7 @@ export function CameraRig() {
     const scenes = fadeScenesRef.current
     const currentlyFaded = new Set<THREE.Mesh>()
 
-    if (blend < 0.5 && scenes.length) {
+    if (blend < 0.5 && scenes.length && camFrameCounter.current++ % 3 === 0) {
       camDir.current.subVectors(_outdoorCamPos, _outdoorLookAt).normalize()
       const dist = _outdoorLookAt.distanceTo(_outdoorCamPos)
       camRaycaster.current.set(_outdoorLookAt, camDir.current)
